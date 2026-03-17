@@ -27,6 +27,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/sandbox.h"
 #include "core/local_url_handlers.h"
 #include "core/launcher.h"
+#include "core/xray_proxy_manager.h"
 #include "core/ui_integration.h"
 #include "chat_helpers/emoji_keywords.h"
 #include "chat_helpers/stickers_emoji_image_loader.h"
@@ -150,6 +151,7 @@ struct Application::Private {
 Application::Application()
 : QObject()
 , _private(std::make_unique<Private>())
+, _xrayProxyManager(std::make_unique<XrayProxyManager>())
 , _platformIntegration(Platform::Integration::Create())
 , _batterySaving(std::make_unique<base::BatterySaving>())
 , _mediaDevices(std::make_unique<Webrtc::Environment>())
@@ -171,6 +173,15 @@ Application::Application()
 , _tray(std::make_unique<Tray>())
 , _setupEmailLock(false)
 , _autoLockTimer([=] { checkAutoLock(); }) {
+	_xrayProxyManager->setStateChangedCallback([=] {
+		const auto current = _private->settings.proxy().isEnabled()
+			? _private->settings.proxy().selected()
+			: MTP::ProxyData();
+		refreshGlobalProxy();
+		_proxyChanges.fire({ current, current });
+		_private->settings.proxy().connectionTypeChangesNotify();
+	});
+
 	Ui::Integration::Set(&_private->uiIntegration);
 
 	_platformIntegration->init();
@@ -266,6 +277,9 @@ void Application::run() {
 	style::internal::StartFonts();
 
 	ValidateScale();
+	_xrayProxyManager->applyProxy(
+		settings().proxy().selected(),
+		settings().proxy().settings());
 
 	refreshGlobalProxy(); // Depends on app settings being read.
 
@@ -793,9 +807,25 @@ void Application::setCurrentProxy(
 	my.setSelected(proxy);
 	my.setSettings(settings);
 	const auto now = current();
+	_xrayProxyManager->applyProxy(proxy, settings);
 	refreshGlobalProxy();
 	_proxyChanges.fire({ was, now });
 	my.connectionTypeChangesNotify();
+}
+
+MTP::ProxyData Application::effectiveProxy() const {
+	const auto &proxy = settings().proxy();
+	if (!proxy.isEnabled()) {
+		return MTP::ProxyData();
+	}
+	const auto selected = proxy.selected();
+	return (selected.type == MTP::ProxyData::Type::Vless)
+		? _xrayProxyManager->effectiveProxy()
+		: selected;
+}
+
+QString Application::proxyError() const {
+	return _xrayProxyManager->lastError();
 }
 
 auto Application::proxyChanges() const -> rpl::producer<ProxyChange> {
@@ -1835,10 +1865,10 @@ void Application::RegisterUrlScheme() {
 		.arguments = arguments,
 		.protocol = u"tg"_q,
 		.protocolName = u"Telegram Link"_q,
-		.shortAppName = u"tdesktop"_q,
-		.longAppName = QCoreApplication::applicationName(),
+		.shortAppName = u"telegram-desktop-vless"_q,
+		.longAppName = AppName.utf16(),
 		.displayAppName = AppName.utf16(),
-		.displayAppDescription = AppName.utf16(),
+		.displayAppDescription = AppDescription.utf16(),
 	});
 
 	base::Platform::RegisterUrlScheme(base::Platform::UrlSchemeDescriptor{
@@ -1846,10 +1876,10 @@ void Application::RegisterUrlScheme() {
 		.arguments = arguments,
 		.protocol = u"tonsite"_q,
 		.protocolName = u"TonSite Link"_q,
-		.shortAppName = u"tdesktop"_q,
-		.longAppName = QCoreApplication::applicationName(),
+		.shortAppName = u"telegram-desktop-vless"_q,
+		.longAppName = AppName.utf16(),
 		.displayAppName = AppName.utf16(),
-		.displayAppDescription = AppName.utf16(),
+		.displayAppDescription = AppDescription.utf16(),
 	});
 }
 

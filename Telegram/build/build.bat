@@ -109,24 +109,24 @@ set "ResourcesPath=%HomePath%\Resources"
 set "SolutionPath=%HomePath%\..\out"
 if %Build64% neq 0 (
   set "UpdateFile=tx64upd%AppVersion%"
-  set "SetupFile=tsetup-x64.%AppVersionStrFull%.exe"
-  set "PortableFile=tportable-x64.%AppVersionStrFull%.zip"
+  set "SetupFile=telegram-desktop-vless-x64.%AppVersionStrFull%.exe"
+  set "PortableFile=telegram-desktop-vless-portable-x64.%AppVersionStrFull%.zip"
   set "DumpSymsPath=%SolutionPath%\..\..\Libraries\win64\breakpad\src\tools\windows\dump_syms\Release\dump_syms.exe"
 ) else if %BuildARM% neq 0 (
   set "UpdateFile=tarm64upd%AppVersion%"
-  set "SetupFile=tsetup-arm64.%AppVersionStrFull%.exe"
-  set "PortableFile=tportable-arm64.%AppVersionStrFull%.zip"
+  set "SetupFile=telegram-desktop-vless-arm64.%AppVersionStrFull%.exe"
+  set "PortableFile=telegram-desktop-vless-portable-arm64.%AppVersionStrFull%.zip"
   set "DumpSymsPath=%SolutionPath%\..\..\Libraries\breakpad\src\tools\windows\dump_syms\Release\dump_syms.exe"
 ) else (
   set "UpdateFile=tupdate%AppVersion%"
-  set "SetupFile=tsetup.%AppVersionStrFull%.exe"
-  set "PortableFile=tportable.%AppVersionStrFull%.zip"
+  set "SetupFile=telegram-desktop-vless.%AppVersionStrFull%.exe"
+  set "PortableFile=telegram-desktop-vless-portable.%AppVersionStrFull%.zip"
   set "DumpSymsPath=%SolutionPath%\..\..\Libraries\breakpad\src\tools\windows\dump_syms\Release\dump_syms.exe"
 )
 set "ReleasePath=%SolutionPath%\Release"
 set "DeployPath=%ReleasePath%\deploy\%AppVersionStrMajor%\%AppVersionStrFull%"
 set "SignPath=%HomePath%\..\..\DesktopPrivate\Sign.bat"
-set "BinaryName=Telegram"
+set "BinaryName=TelegramDesktopVless"
 set "DropboxSymbolsPath=Y:\Telegram\symbols"
 set "DropboxSymbolsPathFallback=%HomePath%\..\..\Dropbox\Telegram\symbols"
 set "FinalReleasePath=Z:\Projects\backup\tdesktop"
@@ -318,6 +318,10 @@ if %BuildUWP% neq 0 (
 
   move "%ReleasePath%\%BinaryName%.exe" "%DeployPath%\%BinaryName%\"
   xcopy "%ReleasePath%\modules\%Platform%\d3d\d3dcompiler_47.dll" "%DeployPath%\%BinaryName%\modules\%Platform%\d3d\"
+  if exist "%ReleasePath%\xray\" (
+    xcopy "%ReleasePath%\xray" "%DeployPath%\%BinaryName%\xray\" /E /I /Y
+    if %errorlevel% neq 0 goto error
+  )
   move "%ReleasePath%\Updater.exe" "%DeployPath%\"
   move "%ReleasePath%\%BinaryName%.pdb" "%DeployPath%\"
   move "%ReleasePath%\Updater.pdb" "%DeployPath%\"

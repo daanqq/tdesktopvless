@@ -13,6 +13,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Core {
 namespace {
 
+constexpr auto kProxyDataVersionTag = qint32(0x564c5353);
+constexpr auto kProxyDataVersion = qint32(3);
+
 [[nodiscard]] qint32 ProxySettingsToInt(MTP::ProxyData::Settings settings) {
 	switch(settings) {
 	case MTP::ProxyData::Settings::System: return 0;
@@ -31,59 +34,235 @@ namespace {
 	Unexpected("Bad type in IntToProxySettings");
 }
 
-[[nodiscard]] MTP::ProxyData DeserializeProxyData(const QByteArray &data) {
-	QDataStream stream(data);
-	stream.setVersion(QDataStream::Qt_5_1);
+[[nodiscard]] qint32 ProxyTypeToInt(MTP::ProxyData::Type type) {
+	switch (type) {
+	case MTP::ProxyData::Type::None: return 0;
+	case MTP::ProxyData::Type::Socks5: return 1;
+	case MTP::ProxyData::Type::Http: return 2;
+	case MTP::ProxyData::Type::Mtproto: return 3;
+	case MTP::ProxyData::Type::Vless: return 4;
+	}
+	Unexpected("Bad type in ProxyTypeToInt");
+}
 
-	qint32 proxyType, port;
+[[nodiscard]] MTP::ProxyData::Type IntToProxyType(qint32 value) {
+	switch (value) {
+	case 0: return MTP::ProxyData::Type::None;
+	case 1: return MTP::ProxyData::Type::Socks5;
+	case 2: return MTP::ProxyData::Type::Http;
+	case 3: return MTP::ProxyData::Type::Mtproto;
+	case 4: return MTP::ProxyData::Type::Vless;
+	}
+	Unexpected("Bad type in IntToProxyType");
+}
+
+[[nodiscard]] qint32 VlessTransportToInt(
+		MTP::ProxyData::VlessTransport transport) {
+	switch (transport) {
+	case MTP::ProxyData::VlessTransport::Tcp: return 0;
+	case MTP::ProxyData::VlessTransport::Ws: return 1;
+	case MTP::ProxyData::VlessTransport::Xhttp: return 2;
+	case MTP::ProxyData::VlessTransport::Grpc: return 3;
+	}
+	Unexpected("Bad type in VlessTransportToInt");
+}
+
+[[nodiscard]] MTP::ProxyData::VlessTransport IntToVlessTransport(
+		qint32 value) {
+	switch (value) {
+	case 0: return MTP::ProxyData::VlessTransport::Tcp;
+	case 1: return MTP::ProxyData::VlessTransport::Ws;
+	case 2: return MTP::ProxyData::VlessTransport::Xhttp;
+	case 3: return MTP::ProxyData::VlessTransport::Grpc;
+	}
+	Unexpected("Bad type in IntToVlessTransport");
+}
+
+[[nodiscard]] MTP::ProxyData::VlessTransport IntToVlessTransportV2(
+		qint32 value) {
+	switch (value) {
+	case 0: return MTP::ProxyData::VlessTransport::Tcp;
+	case 1: return MTP::ProxyData::VlessTransport::Ws;
+	case 2: return MTP::ProxyData::VlessTransport::Grpc;
+	}
+	Unexpected("Bad type in IntToVlessTransportV2");
+}
+
+[[nodiscard]] qint32 VlessSecurityToInt(
+		MTP::ProxyData::VlessSecurity security) {
+	switch (security) {
+	case MTP::ProxyData::VlessSecurity::None: return 0;
+	case MTP::ProxyData::VlessSecurity::Tls: return 1;
+	case MTP::ProxyData::VlessSecurity::Reality: return 2;
+	}
+	Unexpected("Bad type in VlessSecurityToInt");
+}
+
+[[nodiscard]] MTP::ProxyData::VlessSecurity IntToVlessSecurity(qint32 value) {
+	switch (value) {
+	case 0: return MTP::ProxyData::VlessSecurity::None;
+	case 1: return MTP::ProxyData::VlessSecurity::Tls;
+	case 2: return MTP::ProxyData::VlessSecurity::Reality;
+	}
+	Unexpected("Bad type in IntToVlessSecurity");
+}
+
+[[nodiscard]] MTP::ProxyData DeserializeProxyDataOld(
+		QDataStream &stream,
+		qint32 proxyType) {
+	qint32 port = 0;
 	MTP::ProxyData proxy;
 	stream
-		>> proxyType
 		>> proxy.host
 		>> port
 		>> proxy.user
 		>> proxy.password;
 	proxy.port = port;
-	proxy.type = [&] {
-		switch(proxyType) {
-		case 0: return MTP::ProxyData::Type::None;
-		case 1: return MTP::ProxyData::Type::Socks5;
-		case 2: return MTP::ProxyData::Type::Http;
-		case 3: return MTP::ProxyData::Type::Mtproto;
+	proxy.type = IntToProxyType(proxyType);
+	return proxy;
+}
+
+[[nodiscard]] MTP::ProxyData DeserializeProxyData(const QByteArray &data) {
+	if (data.isEmpty()) {
+		return MTP::ProxyData();
+	}
+
+	QDataStream stream(data);
+	stream.setVersion(QDataStream::Qt_5_1);
+
+	qint32 header = 0;
+	stream >> header;
+	if (!stream.status()) {
+		return MTP::ProxyData();
+	}
+	if (header != kProxyDataVersionTag) {
+		return DeserializeProxyDataOld(stream, header);
+	}
+
+	qint32 version = 0;
+	qint32 proxyType = 0;
+	qint32 port = 0;
+	MTP::ProxyData proxy;
+	stream
+		>> version
+		>> proxyType
+		>> proxy.host
+		>> port
+		>> proxy.user
+		>> proxy.password;
+	if (!stream.status() || (version != 2 && version != kProxyDataVersion)) {
+		return MTP::ProxyData();
+	}
+	proxy.port = port;
+	proxy.type = IntToProxyType(proxyType);
+	if (proxy.type == MTP::ProxyData::Type::Vless) {
+		qint32 transport = 0;
+		qint32 security = 0;
+		qint32 allowInsecure = 0;
+		if (version >= 3) {
+			stream
+				>> proxy.vless.id
+				>> transport
+				>> security
+				>> proxy.vless.serverName
+				>> proxy.vless.alpn
+				>> allowInsecure
+				>> proxy.vless.flow
+				>> proxy.vless.fingerprint
+				>> proxy.vless.publicKey
+				>> proxy.vless.shortId
+				>> proxy.vless.spiderX
+				>> proxy.vless.path
+				>> proxy.vless.hostHeader
+				>> proxy.vless.mode
+				>> proxy.vless.serviceName
+				>> proxy.vless.authority;
+		} else {
+			stream
+				>> proxy.vless.id
+				>> transport
+				>> security
+				>> proxy.vless.serverName
+				>> proxy.vless.alpn
+				>> allowInsecure
+				>> proxy.vless.fingerprint
+				>> proxy.vless.publicKey
+				>> proxy.vless.shortId
+				>> proxy.vless.spiderX
+				>> proxy.vless.path
+				>> proxy.vless.hostHeader
+				>> proxy.vless.serviceName
+				>> proxy.vless.authority;
 		}
-		Unexpected("Bad type in DeserializeProxyData");
-	}();
+		if (!stream.status()) {
+			return MTP::ProxyData();
+		}
+		proxy.vless.transport = (version >= 3)
+			? IntToVlessTransport(transport)
+			: IntToVlessTransportV2(transport);
+		proxy.vless.security = IntToVlessSecurity(security);
+		proxy.vless.allowInsecure = (allowInsecure == 1);
+	}
 	return proxy;
 }
 
 [[nodiscard]] QByteArray SerializeProxyData(const MTP::ProxyData &proxy) {
 	auto result = QByteArray();
-	const auto size = 1 * sizeof(qint32)
+	const auto size = 3 * sizeof(qint32)
 		+ Serialize::stringSize(proxy.host)
 		+ 1 * sizeof(qint32)
 		+ Serialize::stringSize(proxy.user)
-		+ Serialize::stringSize(proxy.password);
+		+ Serialize::stringSize(proxy.password)
+		+ ((proxy.type == MTP::ProxyData::Type::Vless)
+			? Serialize::stringSize(proxy.vless.id)
+				+ 3 * sizeof(qint32)
+				+ Serialize::stringSize(proxy.vless.serverName)
+				+ ranges::accumulate(
+					proxy.vless.alpn,
+					0,
+					ranges::plus(),
+					&Serialize::stringSize)
+				+ Serialize::stringSize(proxy.vless.flow)
+				+ Serialize::stringSize(proxy.vless.fingerprint)
+				+ Serialize::stringSize(proxy.vless.publicKey)
+				+ Serialize::stringSize(proxy.vless.shortId)
+				+ Serialize::stringSize(proxy.vless.spiderX)
+				+ Serialize::stringSize(proxy.vless.path)
+				+ Serialize::stringSize(proxy.vless.hostHeader)
+				+ Serialize::stringSize(proxy.vless.mode)
+				+ Serialize::stringSize(proxy.vless.serviceName)
+				+ Serialize::stringSize(proxy.vless.authority)
+			: 0);
 
 	result.reserve(size);
-	{
-		const auto proxyType = [&] {
-			switch(proxy.type) {
-			case MTP::ProxyData::Type::None: return 0;
-			case MTP::ProxyData::Type::Socks5: return 1;
-			case MTP::ProxyData::Type::Http: return 2;
-			case MTP::ProxyData::Type::Mtproto: return 3;
-			}
-			Unexpected("Bad type in SerializeProxyData");
-		}();
-
-		QDataStream stream(&result, QIODevice::WriteOnly);
-		stream.setVersion(QDataStream::Qt_5_1);
+	QDataStream stream(&result, QIODevice::WriteOnly);
+	stream.setVersion(QDataStream::Qt_5_1);
+	stream
+		<< kProxyDataVersionTag
+		<< kProxyDataVersion
+		<< ProxyTypeToInt(proxy.type)
+		<< proxy.host
+		<< qint32(proxy.port)
+		<< proxy.user
+		<< proxy.password;
+	if (proxy.type == MTP::ProxyData::Type::Vless) {
 		stream
-			<< qint32(proxyType)
-			<< proxy.host
-			<< qint32(proxy.port)
-			<< proxy.user
-			<< proxy.password;
+			<< proxy.vless.id
+			<< VlessTransportToInt(proxy.vless.transport)
+			<< VlessSecurityToInt(proxy.vless.security)
+			<< proxy.vless.serverName
+			<< proxy.vless.alpn
+			<< qint32(proxy.vless.allowInsecure ? 1 : 0)
+			<< proxy.vless.flow
+			<< proxy.vless.fingerprint
+			<< proxy.vless.publicKey
+			<< proxy.vless.shortId
+			<< proxy.vless.spiderX
+			<< proxy.vless.path
+			<< proxy.vless.hostHeader
+			<< proxy.vless.mode
+			<< proxy.vless.serviceName
+			<< proxy.vless.authority;
 	}
 	return result;
 }

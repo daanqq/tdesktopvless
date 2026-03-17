@@ -58,7 +58,7 @@ if [ "$BuildTarget" == "linux" ]; then
   SetupFile="tsetup.$AppVersionStrFull.tar.xz"
   ProjectPath="$HomePath/../out"
   ReleasePath="$ProjectPath/Release"
-  BinaryName="Telegram"
+  BinaryName="TelegramDesktopVless"
 elif [ "$BuildTarget" == "mac" ] ; then
   if [ "$arg1" == "x86_64" ] || [ "$arg1" == "arm64" ]; then
     echo "Building version $AppVersionStrFull for macOS 10.13+ ($arg1).."
@@ -91,7 +91,7 @@ elif [ "$BuildTarget" == "mac" ] ; then
   fi
   ProjectPath="$HomePath/../out"
   ReleasePath="$ProjectPath/Release"
-  BinaryName="Telegram"
+  BinaryName="TelegramDesktopVless"
   if [ "$MacArch" != "" ]; then
     BundleName="$BinaryName.$MacArch.app"
     SetupFile="tsetup.$MacArch.$AppVersionStrFull.dmg"
@@ -107,7 +107,7 @@ elif [ "$BuildTarget" == "macstore" ]; then
   echo "Building version $AppVersionStrFull for Mac App Store.."
   ProjectPath="$HomePath/../out"
   ReleasePath="$ProjectPath/Release"
-  BinaryName="Telegram Lite"
+  BinaryName="TelegramDesktopVlessLite"
   BundleName="$BinaryName.app"
 else
   Error "Invalid target!"

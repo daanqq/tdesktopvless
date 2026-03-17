@@ -7,6 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include <QtCore/QStringList>
+
+#include <optional>
+
 namespace MTP {
 
 struct ProxyData {
@@ -20,6 +24,7 @@ struct ProxyData {
 		Socks5,
 		Http,
 		Mtproto,
+		Vless,
 	};
 	enum class Status {
 		Valid,
@@ -27,11 +32,42 @@ struct ProxyData {
 		IncorrectSecret,
 		Invalid,
 	};
+	enum class VlessTransport {
+		Tcp,
+		Ws,
+		Xhttp,
+		Grpc,
+	};
+	enum class VlessSecurity {
+		None,
+		Tls,
+		Reality,
+	};
+	struct VlessConfig {
+		QString id;
+		VlessTransport transport = VlessTransport::Tcp;
+		VlessSecurity security = VlessSecurity::None;
+		QString serverName;
+		QStringList alpn;
+		bool allowInsecure = false;
+		QString flow;
+		QString fingerprint;
+		QString publicKey;
+		QString shortId;
+		QString spiderX;
+		QString path;
+		QString hostHeader;
+		QString mode;
+		QString serviceName;
+		QString authority;
+
+	};
 
 	Type type = Type::None;
 	QString host;
 	uint32 port = 0;
 	QString user, password;
+	VlessConfig vless;
 
 	std::vector<QString> resolvedIPs;
 	crl::time resolvedExpireAt = 0;
@@ -48,6 +84,10 @@ struct ProxyData {
 	[[nodiscard]] static bool ValidMtprotoPassword(const QString &password);
 	[[nodiscard]] static Status MtprotoPasswordStatus(
 		const QString &password);
+	[[nodiscard]] static Status VlessLinkStatus(const QString &link);
+	[[nodiscard]] static std::optional<ProxyData> TryParseVlessLink(
+		const QString &link);
+	[[nodiscard]] QString toVlessLink() const;
 
 };
 
@@ -55,5 +95,6 @@ struct ProxyData {
 	const ProxyData &proxy,
 	int ipIndex = 0);
 [[nodiscard]] QNetworkProxy ToNetworkProxy(const ProxyData &proxy);
+[[nodiscard]] bool VlessProxyForCallsEnabled();
 
 } // namespace MTP

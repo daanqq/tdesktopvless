@@ -20,7 +20,7 @@ cd $HomePath
 
 ProjectPath="$HomePath/../out"
 ReleasePath="$ProjectPath/Release"
-BinaryName="Telegram"
+BinaryName="TelegramDesktopVless"
 
 if [ ! -f "/usr/bin/cmake" ]; then
   ln -s cmake3 /usr/bin/cmake

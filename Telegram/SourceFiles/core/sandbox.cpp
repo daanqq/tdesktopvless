@@ -465,11 +465,14 @@ void Sandbox::checkForQuit() {
 }
 
 void Sandbox::refreshGlobalProxy() {
-	const auto proxy = !Core::IsAppLaunched()
+	const auto selected = !Core::IsAppLaunched()
 		? _sandboxProxy
 		: Core::App().settings().proxy().isEnabled()
 		? Core::App().settings().proxy().selected()
 		: MTP::ProxyData();
+	const auto proxy = !Core::IsAppLaunched()
+		? selected
+		: Core::App().effectiveProxy();
 	if (proxy.type == MTP::ProxyData::Type::Socks5
 		|| proxy.type == MTP::ProxyData::Type::Http) {
 		QNetworkProxy::setApplicationProxy(

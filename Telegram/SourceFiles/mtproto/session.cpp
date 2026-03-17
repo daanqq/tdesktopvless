@@ -238,9 +238,13 @@ void Session::restart() {
 
 void Session::refreshOptions() {
 	auto &settings = Core::App().settings().proxy();
-	const auto &proxy = settings.selected();
-	const auto isEnabled = settings.isEnabled();
-	const auto proxyType = (isEnabled ? proxy.type : ProxyData::Type::None);
+	const auto selected = settings.selected();
+	const auto proxy = settings.isEnabled()
+		? ((selected.type == ProxyData::Type::Vless)
+			? Core::App().effectiveProxy()
+			: selected)
+		: ProxyData();
+	const auto proxyType = proxy.type;
 	const auto useTcp = (proxyType != ProxyData::Type::Http);
 	const auto useHttp = (proxyType != ProxyData::Type::Mtproto);
 	const auto useIPv4 = true;
@@ -249,7 +253,7 @@ void Session::refreshOptions() {
 		_instance->systemLangCode(),
 		_instance->cloudLangCode(),
 		_instance->langPackName(),
-		(isEnabled ? proxy : ProxyData()),
+		proxy,
 		useIPv4,
 		useIPv6,
 		useHttp,

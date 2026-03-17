@@ -128,6 +128,9 @@ public:
 	[[nodiscard]] SettingsProxy &proxy() {
 		return _proxy;
 	}
+	[[nodiscard]] const SettingsProxy &proxy() const {
+		return _proxy;
+	}
 
 	[[nodiscard]] static bool IsLeftCorner(ScreenCorner corner) {
 		return (corner == ScreenCorner::TopLeft)
@@ -1156,4 +1159,3 @@ private:
 };
 
 } // namespace Core
-

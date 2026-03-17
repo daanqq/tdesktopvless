@@ -62,7 +62,8 @@ using ProxyData = MTP::ProxyData;
 
 [[nodiscard]] std::vector<QString> ExtractUrlsSimple(const QString &input) {
 	auto urls = std::vector<QString>();
-	static auto urlRegex = QRegularExpression(R"((https?:\/\/[^\s]+))");
+	static auto urlRegex = QRegularExpression(
+		R"(((?:https?|tg|vless):\/\/[^\s]+))");
 
 	auto it = urlRegex.globalMatch(input);
 	while (it.hasNext()) {
@@ -107,6 +108,7 @@ void AddProxyFromClipboard(
 	const auto proxyString = u"proxy"_q;
 	const auto socksString = u"socks"_q;
 	const auto protocol = u"tg://"_q;
+	const auto vlessProtocol = u"vless://"_q;
 
 	const auto maybeUrls = ExtractUrlsSimple(
 		QGuiApplication::clipboard()->text());
@@ -121,6 +123,27 @@ void AddProxyFromClipboard(
 	};
 
 	const auto proceedUrl = [=](const auto &local) {
+		if (local.startsWith(vlessProtocol, Qt::CaseInsensitive)) {
+			const auto parsed = ProxyData::TryParseVlessLink(local);
+			if (!parsed) {
+				const auto status = ProxyData::VlessLinkStatus(local);
+				return (status == ProxyData::Status::Unsupported)
+					? Result::Unsupported
+					: Result::Invalid;
+			}
+			const auto contains = controller->contains(*parsed);
+			const auto toast = (contains
+				? tr::lng_proxy_add_from_clipboard_existing_toast
+				: tr::lng_proxy_add_from_clipboard_good_toast)(tr::now);
+			if (isSingle) {
+				show->showToast(toast);
+			}
+			if (!contains) {
+				controller->addNewItem(*parsed);
+			}
+			return Result::Success;
+		}
+
 		const auto command = base::StringViewMid(
 			local,
 			protocol.size(),
@@ -403,7 +426,11 @@ private:
 
 	void prepare() override;
 	void setInnerFocus() override {
-		_host->setFocusFast();
+		if (_type->current() == Type::Vless) {
+			_vlessLink->setFocusFast();
+		} else {
+			_host->setFocusFast();
+		}
 	}
 
 	void refreshButtons();
@@ -415,6 +442,7 @@ private:
 	void setupSocketAddress(const ProxyData &data);
 	void setupCredentials(const ProxyData &data);
 	void setupMtprotoCredentials(const ProxyData &data);
+	void setupVlessLink(const ProxyData &data);
 
 	void addLabel(
 		not_null<Ui::VerticalLayout*> parent,
@@ -428,11 +456,14 @@ private:
 	std::shared_ptr<Ui::RadioenumGroup<Type>> _type;
 
 	QPointer<Ui::SlideWrap<>> _aboutSponsored;
+	QPointer<Ui::SlideWrap<Ui::VerticalLayout>> _socketAddress;
 	QPointer<HostInput> _host;
 	QPointer<Ui::NumberInput> _port;
 	QPointer<Ui::InputField> _user;
 	QPointer<Ui::PasswordInput> _password;
 	QPointer<Base64UrlInput> _secret;
+	QPointer<Ui::SlideWrap<Ui::VerticalLayout>> _vless;
+	QPointer<Ui::InputField> _vlessLink;
 
 	QPointer<Ui::SlideWrap<Ui::VerticalLayout>> _credentials;
 	QPointer<Ui::SlideWrap<Ui::VerticalLayout>> _mtprotoCredentials;
@@ -1117,6 +1148,10 @@ void ProxyBox::prepare() {
 	}, _port->lifetime());
 
 	const auto submit = [=] {
+		if (_type->current() == Type::Vless) {
+			save();
+			return;
+		}
 		if (_host->hasFocus()
 			&& !_host->getLastText().trimmed().isEmpty()) {
 			_port->setFocus();
@@ -1139,6 +1174,8 @@ void ProxyBox::prepare() {
 	) | rpl::on_next(submit, _user->lifetime());
 	connect(_password.data(), &Ui::MaskedInputField::submitted, submit);
 	connect(_secret.data(), &Ui::MaskedInputField::submitted, submit);
+	_vlessLink->submits(
+	) | rpl::on_next(submit, _vlessLink->lifetime());
 
 	refreshButtons();
 	setDimensionsToContent(st::boxWideWidth, _content);
@@ -1171,6 +1208,20 @@ void ProxyBox::share() {
 ProxyData ProxyBox::collectData() {
 	auto result = ProxyData();
 	result.type = _type->current();
+	if (result.type == Type::Vless) {
+		const auto link = _vlessLink->getLastText().trimmed();
+		const auto parsed = ProxyData::TryParseVlessLink(link);
+		if (parsed) {
+			return *parsed;
+		}
+		const auto status = ProxyData::VlessLinkStatus(link);
+		_vlessLink->showError();
+		Ui::show(Ui::MakeInformBox(
+			(status == ProxyData::Status::Unsupported)
+				? tr::lng_proxy_unsupported(tr::now, tr::rich)
+				: tr::lng_proxy_invalid(tr::now, tr::rich)));
+		return ProxyData();
+	}
 	result.host = _host->getLastText().trimmed();
 	result.port = _port->getLastText().trimmed().toInt();
 	result.user = (result.type == Type::Mtproto)
@@ -1201,6 +1252,7 @@ void ProxyBox::setupTypes() {
 		{ Type::Http, "HTTP" },
 		{ Type::Socks5, "SOCKS5" },
 		{ Type::Mtproto, "MTPROTO" },
+		{ Type::Vless, "VLESS" },
 	};
 	for (const auto &[type, label] : types) {
 		_content->add(
@@ -1223,10 +1275,15 @@ void ProxyBox::setupTypes() {
 }
 
 void ProxyBox::setupSocketAddress(const ProxyData &data) {
-	addLabel(_content, tr::lng_proxy_address_label(tr::now));
-	const auto address = _content->add(
-		object_ptr<Ui::FixedHeightWidget>(
+	_socketAddress = _content->add(
+		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
 			_content,
+			object_ptr<Ui::VerticalLayout>(_content)));
+	const auto addressLayout = _socketAddress->entity();
+	addLabel(addressLayout, tr::lng_proxy_address_label(tr::now));
+	const auto address = addressLayout->add(
+		object_ptr<Ui::FixedHeightWidget>(
+			addressLayout,
 			st::connectionHostInputField.heightMin),
 		st::proxyEditInputPadding);
 	_host = Ui::CreateChild<HostInput>(
@@ -1309,6 +1366,22 @@ void ProxyBox::setupMtprotoCredentials(const ProxyData &data) {
 	mtproto->add(std::move(secretWrap), st::proxyEditInputPadding);
 }
 
+void ProxyBox::setupVlessLink(const ProxyData &data) {
+	_vless = _content->add(
+		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+			_content,
+			object_ptr<Ui::VerticalLayout>(_content)));
+	const auto vless = _vless->entity();
+	addLabel(vless, u"VLESS URI"_q);
+	_vlessLink = vless->add(
+		object_ptr<Ui::InputField>(
+			vless,
+			st::connectionUserInputField,
+			rpl::single(u"vless://"_q),
+			(data.type == Type::Vless) ? data.toVlessLink() : QString()),
+		st::proxyEditInputPadding);
+}
+
 void ProxyBox::setupControls(const ProxyData &data) {
 	_type = std::make_shared<Ui::RadioenumGroup<Type>>(
 		(data.type == Type::None
@@ -1322,13 +1395,20 @@ void ProxyBox::setupControls(const ProxyData &data) {
 	setupSocketAddress(data);
 	setupCredentials(data);
 	setupMtprotoCredentials(data);
+	setupVlessLink(data);
 
 	const auto handleType = [=](Type type) {
+		_socketAddress->toggle(
+			type != Type::Vless,
+			anim::type::instant);
 		_credentials->toggle(
 			type == Type::Http || type == Type::Socks5,
 			anim::type::instant);
 		_mtprotoCredentials->toggle(
 			type == Type::Mtproto,
+			anim::type::instant);
+		_vless->toggle(
+			type == Type::Vless,
 			anim::type::instant);
 		_aboutSponsored->toggle(
 			type == Type::Mtproto,
@@ -1482,6 +1562,15 @@ auto ProxiesBoxController::proxySettingsValue() const
 
 void ProxiesBoxController::refreshChecker(Item &item) {
 	using Variants = MTP::DcOptions::Variants;
+	if (item.data.type == Type::Vless) {
+		item.checker = nullptr;
+		item.checkerv6 = nullptr;
+		item.ping = 0;
+		item.state = item.data.valid()
+			? ItemState::Available
+			: ItemState::Unavailable;
+		return;
+	}
 	const auto type = (item.data.type == Type::Http)
 		? Variants::Http
 		: Variants::Tcp;
@@ -1630,7 +1719,9 @@ void ProxiesBoxController::shareItem(int id, bool qr) {
 void ProxiesBoxController::shareItems() {
 	auto result = QString();
 	for (const auto &item : _list) {
-		if (!item.deleted) {
+		const auto shareable = (item.data.type == Type::Socks5)
+			|| (item.data.type == Type::Mtproto);
+		if (!item.deleted && shareable) {
 			result += ProxyDataToString(item.data) + '\n' + '\n';
 		}
 	}
@@ -1649,11 +1740,26 @@ void ProxiesBoxController::applyItem(int id) {
 		return;
 	}
 
+	const auto previousProxy = _settings.selected();
+	const auto previousSettings = _settings.settings();
 	auto j = findByProxy(_settings.selected());
 
 	Core::App().setCurrentProxy(
 		item->data,
 		ProxyData::Settings::Enabled);
+	if (item->data.type == Type::Vless && !Core::App().effectiveProxy()) {
+		Core::App().setCurrentProxy(previousProxy, previousSettings);
+		if (j != end(_list)) {
+			updateView(*j);
+		}
+		updateView(*item);
+		if (_show) {
+			const auto error = Core::App().proxyError();
+			_show->showBox(Ui::MakeInformBox(
+				error.isEmpty() ? u"Could not start Xray."_q : error));
+		}
+		return;
+	}
 	saveDelayed();
 
 	if (j != end(_list)) {
@@ -1813,7 +1919,19 @@ bool ProxiesBoxController::setProxySettings(ProxyData::Settings value) {
 			}
 		}
 	}
+	const auto previousSettings = _settings.settings();
 	Core::App().setCurrentProxy(_settings.selected(), value);
+	if (value == ProxyData::Settings::Enabled
+		&& _settings.selected().type == Type::Vless
+		&& !Core::App().effectiveProxy()) {
+		Core::App().setCurrentProxy(_settings.selected(), previousSettings);
+		if (_show) {
+			const auto error = Core::App().proxyError();
+			_show->showBox(Ui::MakeInformBox(
+				error.isEmpty() ? u"Could not start Xray."_q : error));
+		}
+		return true;
+	}
 	saveDelayed();
 	return true;
 }
@@ -1850,7 +1968,9 @@ auto ProxiesBoxController::views() const -> rpl::producer<ItemView> {
 rpl::producer<bool> ProxiesBoxController::listShareableChanges() const {
 	return _views.events_starting_with(ItemView()) | rpl::map([=] {
 		for (const auto &item : _list) {
-			if (!item.deleted) {
+			if (!item.deleted
+				&& (item.data.type == Type::Socks5
+					|| item.data.type == Type::Mtproto)) {
 				return true;
 			}
 		}
@@ -1866,6 +1986,7 @@ void ProxiesBoxController::updateView(const Item &item) {
 		case Type::Http: return u"HTTP"_q;
 		case Type::Socks5: return u"SOCKS5"_q;
 		case Type::Mtproto: return u"MTPROTO"_q;
+		case Type::Vless: return u"VLESS"_q;
 		}
 		Unexpected("Proxy type in ProxiesBoxController::updateView.");
 	}();
@@ -1895,7 +2016,7 @@ void ProxiesBoxController::updateView(const Item &item) {
 }
 
 void ProxiesBoxController::share(const ProxyData &proxy, bool qr) {
-	if (proxy.type == Type::Http) {
+	if (proxy.type == Type::Http || proxy.type == Type::Vless) {
 		return;
 	}
 	const auto link = ProxyDataToString(proxy);

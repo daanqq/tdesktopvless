@@ -1170,13 +1170,21 @@ void Call::createAndStartController(const MTPDphoneCall &call) {
 		using ProxyData = MTP::ProxyData;
 		if (settingsProxy.useProxyForCalls() && settingsProxy.isEnabled()) {
 			const auto &selected = settingsProxy.selected();
-			if (selected.supportsCalls() && !selected.host.isEmpty()) {
-				Assert(selected.type == ProxyData::Type::Socks5);
+			const auto vlessProxyForCalls = (selected.type == ProxyData::Type::Vless)
+				&& MTP::VlessProxyForCallsEnabled();
+			const auto proxy = vlessProxyForCalls
+				? Core::App().effectiveProxy()
+				: selected;
+			if ((vlessProxyForCalls
+				? (proxy.type == ProxyData::Type::Socks5)
+				: selected.supportsCalls())
+				&& !proxy.host.isEmpty()) {
+				Assert(proxy.type == ProxyData::Type::Socks5);
 				descriptor.proxy = std::make_unique<tgcalls::Proxy>();
-				descriptor.proxy->host = selected.host.toStdString();
-				descriptor.proxy->port = selected.port;
-				descriptor.proxy->login = selected.user.toStdString();
-				descriptor.proxy->password = selected.password.toStdString();
+				descriptor.proxy->host = proxy.host.toStdString();
+				descriptor.proxy->port = proxy.port;
+				descriptor.proxy->login = proxy.user.toStdString();
+				descriptor.proxy->password = proxy.password.toStdString();
 			}
 		}
 	}

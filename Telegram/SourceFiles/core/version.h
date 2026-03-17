@@ -18,10 +18,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #endif // TDESKTOP_ALLOW_CLOSED_ALPHA
 
 // used in Updater.cpp and Setup.iss for Windows
-constexpr auto AppId = "{53F49750-6209-4FBF-9CA8-7A333C87D1ED}"_cs;
+constexpr auto AppId = "{E40FA746-5271-4B16-926B-E5261E88B2DB}"_cs;
 constexpr auto AppNameOld = "Telegram Win (Unofficial)"_cs;
-constexpr auto AppName = "Telegram Desktop"_cs;
-constexpr auto AppFile = "Telegram"_cs;
+constexpr auto AppName = "Unofficial Telegram Desktop VLESS"_cs;
+constexpr auto AppDescription
+	= "Unofficial Telegram Desktop fork with VLESS support."_cs;
+constexpr auto AppFile = "TelegramDesktopVless"_cs;
 constexpr auto AppVersion = 6006004;
 constexpr auto AppVersionStr = "6.6.4";
 constexpr auto AppBetaVersion = true;

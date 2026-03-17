@@ -114,6 +114,7 @@ namespace Core {
 struct LocalUrlHandler;
 class Settings;
 class Tray;
+class XrayProxyManager;
 
 enum class LaunchState {
 	Running,
@@ -219,6 +220,8 @@ public:
 	void setCurrentProxy(
 		const MTP::ProxyData &proxy,
 		MTP::ProxyData::Settings settings);
+	[[nodiscard]] MTP::ProxyData effectiveProxy() const;
+	[[nodiscard]] QString proxyError() const;
 	[[nodiscard]] rpl::producer<ProxyChange> proxyChanges() const;
 	void badMtprotoConfigurationError();
 
@@ -402,6 +405,7 @@ private:
 	// Some fields are just moved from the declaration.
 	struct Private;
 	const std::unique_ptr<Private> _private;
+	const std::unique_ptr<XrayProxyManager> _xrayProxyManager;
 	const std::unique_ptr<Platform::Integration> _platformIntegration;
 	const std::unique_ptr<base::BatterySaving> _batterySaving;
 	const std::unique_ptr<Webrtc::Environment> _mediaDevices;

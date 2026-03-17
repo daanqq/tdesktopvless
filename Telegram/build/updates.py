@@ -74,22 +74,22 @@ if building:
 
     os.chdir(conf);
     if uuid == '':
-        if not os.path.exists('Telegram.app'):
-            finish(1, 'Telegram.app not found.')
+        if not os.path.exists('TelegramDesktopVless.app'):
+            finish(1, 'TelegramDesktopVless.app not found.')
 
-        result = subprocess.call('strip Telegram.app/Contents/MacOS/Telegram', shell=True)
+        result = subprocess.call('strip TelegramDesktopVless.app/Contents/MacOS/TelegramDesktopVless', shell=True)
         if result != 0:
-            finish(1, 'While stripping Telegram.')
+            finish(1, 'While stripping TelegramDesktopVless.')
 
-        result = subprocess.call('codesign --force --deep --timestamp --options runtime --sign "Developer ID Application: Telegram FZ-LLC (C67CF9S4VU)" Telegram.app --entitlements "../../Telegram/Telegram/Telegram.entitlements"', shell=True)
+        result = subprocess.call('codesign --force --deep --timestamp --options runtime --sign "Developer ID Application: Telegram FZ-LLC (C67CF9S4VU)" TelegramDesktopVless.app --entitlements "../../Telegram/Telegram/Telegram.entitlements"', shell=True)
         if result != 0:
-            finish(1, 'While signing Telegram.')
+            finish(1, 'While signing TelegramDesktopVless.')
 
-        if not os.path.exists('Telegram.app/Contents/Frameworks/Updater'):
+        if not os.path.exists('TelegramDesktopVless.app/Contents/Frameworks/Updater'):
             finish(1, 'Updater not found.')
-        elif not os.path.exists('Telegram.app/Contents/Helpers/crashpad_handler'):
+        elif not os.path.exists('TelegramDesktopVless.app/Contents/Helpers/crashpad_handler'):
             finish(1, 'crashpad_handler not found.')
-        elif not os.path.exists('Telegram.app/Contents/_CodeSignature'):
+        elif not os.path.exists('TelegramDesktopVless.app/Contents/_CodeSignature'):
             finish(1, 'Signature not found.')
 
         if os.path.exists(today):
@@ -98,9 +98,9 @@ if building:
         if result != 0:
             finish(1, 'Creating folder ' + today + '/TelegramForcePortable')
 
-        result = subprocess.call('cp -r Telegram.app ' + today + '/', shell=True)
+        result = subprocess.call('cp -r TelegramDesktopVless.app ' + today + '/', shell=True)
         if result != 0:
-            finish(1, 'Cloning Telegram.app to ' + today + '.')
+            finish(1, 'Cloning TelegramDesktopVless.app to ' + today + '.')
 
         result = subprocess.call('zip -r ' + archive + ' ' + today, shell=True)
         if result != 0:
@@ -110,15 +110,15 @@ if building:
         result = subprocess.call('xcrun notarytool submit "' + archive + '" --keychain-profile "preston" --wait', shell=True)
         if result != 0:
             finish(1, 'Notarizing the archive.')
-    result = subprocess.call('xcrun stapler staple Telegram.app', shell=True)
+    result = subprocess.call('xcrun stapler staple TelegramDesktopVless.app', shell=True)
     if result != 0:
         finish(1, 'Error calling stapler')
 
-    subprocess.call('rm -rf ' + today + '/Telegram.app', shell=True)
+    subprocess.call('rm -rf ' + today + '/TelegramDesktopVless.app', shell=True)
     subprocess.call('rm ' + archive, shell=True)
-    result = subprocess.call('cp -r Telegram.app ' + today + '/', shell=True)
+    result = subprocess.call('cp -r TelegramDesktopVless.app ' + today + '/', shell=True)
     if result != 0:
-        finish(1, 'Re-Cloning Telegram.app to ' + today + '.')
+        finish(1, 'Re-Cloning TelegramDesktopVless.app to ' + today + '.')
 
     result = subprocess.call('zip -r ' + archive + ' ' + today, shell=True)
     if result != 0:
@@ -203,6 +203,6 @@ if len(caption) > 1024:
 if not os.path.exists('../out/' + conf + '/' + outputFolder + '/' + archive):
     finish(1, 'Not built yet.')
 
-subprocess.call(scriptPath + '/../../out/' + conf + '/Telegram.app/Contents/MacOS/Telegram -sendpath interpret://' + scriptPath + '/../../out/' + conf + '/' + outputFolder + '/command.txt', shell=True)
+subprocess.call(scriptPath + '/../../out/' + conf + '/TelegramDesktopVless.app/Contents/MacOS/TelegramDesktopVless -sendpath interpret://' + scriptPath + '/../../out/' + conf + '/' + outputFolder + '/command.txt', shell=True)
 
 finish(0)
