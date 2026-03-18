@@ -132,7 +132,7 @@ constexpr auto kProxyDataVersion = qint32(3);
 
 	qint32 header = 0;
 	stream >> header;
-	if (!stream.status()) {
+	if (stream.status() != QDataStream::Ok) {
 		return MTP::ProxyData();
 	}
 	if (header != kProxyDataVersionTag) {
@@ -150,7 +150,8 @@ constexpr auto kProxyDataVersion = qint32(3);
 		>> port
 		>> proxy.user
 		>> proxy.password;
-	if (!stream.status() || (version != 2 && version != kProxyDataVersion)) {
+	if (stream.status() != QDataStream::Ok
+		|| (version != 2 && version != kProxyDataVersion)) {
 		return MTP::ProxyData();
 	}
 	proxy.port = port;
@@ -194,7 +195,7 @@ constexpr auto kProxyDataVersion = qint32(3);
 				>> proxy.vless.serviceName
 				>> proxy.vless.authority;
 		}
-		if (!stream.status()) {
+		if (stream.status() != QDataStream::Ok) {
 			return MTP::ProxyData();
 		}
 		proxy.vless.transport = (version >= 3)
