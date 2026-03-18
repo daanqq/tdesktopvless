@@ -1,6 +1,8 @@
-# [Telegram Desktop][telegram_desktop] – Official Messenger
+# [Telegram Desktop][telegram_desktop] - Unofficial Client with VLESS Support
 
-This is the complete source code and the build instructions for the official [Telegram][telegram] messenger desktop client, based on the [Telegram API][telegram_api] and the [MTProto][telegram_proto] secure protocol.
+This repository contains an unofficial fork of the [Telegram Desktop][telegram_desktop] client with VLESS support, based on the [Telegram API][telegram_api] and the [MTProto][telegram_proto] secure protocol.
+
+It is not an official Telegram client and is not affiliated with or endorsed by [Telegram][telegram].
 
 [![Version](https://badge.fury.io/gh/telegramdesktop%2Ftdesktop.svg)](https://github.com/telegramdesktop/tdesktop/releases)
 [![Build Status](https://github.com/telegramdesktop/tdesktop/workflows/Windows./badge.svg)](https://github.com/telegramdesktop/tdesktop/actions)
