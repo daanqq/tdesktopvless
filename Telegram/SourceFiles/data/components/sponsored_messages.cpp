@@ -56,13 +56,6 @@ template <typename Fields>
 SponsoredMessages::SponsoredMessages(not_null<Main::Session*> session)
 : _session(session)
 , _clearTimer([=] { clearOldRequests(); }) {
-	Data::AmPremiumValue(
-		_session
-	) | rpl::on_next([=](bool premium) {
-		if (premium) {
-			clear();
-		}
-	}, _lifetime);
 }
 
 SponsoredMessages::~SponsoredMessages() {
@@ -79,7 +72,11 @@ void SponsoredMessages::clear() {
 	for (const auto &request : base::take(_viewRequests)) {
 		_session->api().request(request.second.requestId).cancel();
 	}
+	for (const auto &request : base::take(_requestsForVideo)) {
+		_session->api().request(request.second.requestId).cancel();
+	}
 	base::take(_data);
+	base::take(_dataForVideo);
 }
 
 void SponsoredMessages::clearOldRequests() {
@@ -103,35 +100,7 @@ void SponsoredMessages::clearOldRequests() {
 
 SponsoredMessages::AppendResult SponsoredMessages::append(
 		not_null<History*> history) {
-	if (isTopBarFor(history)) {
-		return SponsoredMessages::AppendResult::None;
-	}
-	const auto it = _data.find(history);
-	if (it == end(_data)) {
-		return SponsoredMessages::AppendResult::None;
-	}
-	auto &list = it->second;
-	if (list.showedAll
-		|| !TooEarlyForRequest(list.received)
-		|| list.postsBetween) {
-		return SponsoredMessages::AppendResult::None;
-	}
-
-	const auto entryIt = ranges::find_if(list.entries, [](const Entry &e) {
-		return e.item == nullptr;
-	});
-	if (entryIt == end(list.entries)) {
-		list.showedAll = true;
-		return SponsoredMessages::AppendResult::None;
-	} else if (entryIt->preload) {
-		return SponsoredMessages::AppendResult::MediaLoading;
-	}
-	entryIt->item.reset(history->addSponsoredMessage(
-		entryIt->itemFullId.msg,
-		entryIt->sponsored.from,
-		entryIt->sponsored.textWithEntities));
-
-	return SponsoredMessages::AppendResult::Appended;
+	return SponsoredMessages::AppendResult::None;
 }
 
 void SponsoredMessages::inject(
@@ -139,234 +108,37 @@ void SponsoredMessages::inject(
 		MsgId injectAfterMsgId,
 		int betweenHeight,
 		int fallbackWidth) {
-	if (!canHaveFor(history)) {
-		return;
-	}
-	const auto it = _data.find(history);
-	if (it == end(_data)) {
-		return;
-	}
-	auto &list = it->second;
-	if (!list.postsBetween || (list.entries.size() == list.injectedCount)) {
-		return;
-	}
-
-	while (true) {
-		const auto entryIt = ranges::find_if(list.entries, [](const auto &e) {
-			return e.item == nullptr;
-		});
-		if (entryIt == end(list.entries)) {
-			list.showedAll = true;
-			return;
-		}
-		const auto lastView = (entryIt != begin(list.entries))
-			? (entryIt - 1)->item->mainView()
-			: (injectAfterMsgId == ShowAtUnreadMsgId)
-			? history->firstUnreadMessage()
-			: [&] {
-				const auto message = history->peer->owner().message(
-					history->peer->id,
-					injectAfterMsgId);
-				return message ? message->mainView() : nullptr;
-			}();
-		if (!lastView || !lastView->block()) {
-			return;
-		}
-
-		auto summaryBetween = 0;
-		auto summaryHeight = 0;
-
-		using BlockPtr = std::unique_ptr<HistoryBlock>;
-		using ViewPtr = std::unique_ptr<HistoryView::Element>;
-		auto blockIt = ranges::find(
-			history->blocks,
-			lastView->block(),
-			&BlockPtr::get);
-		if (blockIt == end(history->blocks)) {
-			return;
-		}
-		const auto messages = [&]() -> const std::vector<ViewPtr>& {
-			return (*blockIt)->messages;
-		};
-		auto lastViewIt = ranges::find(messages(), lastView, &ViewPtr::get);
-		auto appendAtLeastToEnd = false;
-		while ((summaryBetween < list.postsBetween)
-			|| (summaryHeight < betweenHeight)) {
-			lastViewIt++;
-			if (lastViewIt == end(messages())) {
-				blockIt++;
-				if (blockIt != end(history->blocks)) {
-					lastViewIt = begin(messages());
-				} else {
-					if (!list.injectedCount) {
-						appendAtLeastToEnd = true;
-						break;
-					}
-					return;
-				}
-			}
-			summaryBetween++;
-			const auto viewHeight = (*lastViewIt)->height();
-			summaryHeight += viewHeight
-				? viewHeight
-				: (*lastViewIt)->resizeGetHeight(fallbackWidth);
-		}
-		// SponsoredMessages::Details can be requested within
-		// the constructor of HistoryItem, so itemFullId is used as a key.
-		entryIt->itemFullId = FullMsgId(
-			history->peer->id,
-			_session->data().nextLocalMessageId());
-		if (appendAtLeastToEnd) {
-			entryIt->item.reset(history->addSponsoredMessage(
-				entryIt->itemFullId.msg,
-				entryIt->sponsored.from,
-				entryIt->sponsored.textWithEntities));
-		} else {
-			const auto makedMessage = history->makeMessage(
-				entryIt->itemFullId.msg,
-				entryIt->sponsored.from,
-				entryIt->sponsored.textWithEntities,
-				(*lastViewIt)->data());
-			entryIt->item.reset(makedMessage.get());
-			history->addNewInTheMiddle(
-				makedMessage.get(),
-				std::distance(begin(history->blocks), blockIt),
-				std::distance(begin(messages()), lastViewIt) + 1);
-			messages().back().get()->setPendingResize();
-		}
-		list.injectedCount++;
-	}
 }
 
 bool SponsoredMessages::canHaveFor(not_null<History*> history) const {
-	if (history->peer->isChannel()) {
-		return true;
-	} else if (const auto user = history->peer->asUser()) {
-		return user->isBot();
-	}
 	return false;
 }
 
 bool SponsoredMessages::canHaveFor(not_null<HistoryItem*> item) const {
-	return item->history()->peer->isBroadcast()
-		&& item->isRegular();
+	return false;
 }
 
 bool SponsoredMessages::isTopBarFor(not_null<History*> history) const {
-	if (peerIsUser(history->peer->id)) {
-		if (const auto user = history->peer->asUser()) {
-			return user->isBot();
-		}
-	}
 	return false;
 }
 
 void SponsoredMessages::request(not_null<History*> history, Fn<void()> done) {
-	if (!canHaveFor(history)) {
-		return;
+	clearItems(history);
+	if (done) {
+		done();
 	}
-	auto &request = _requests[history];
-	if (request.requestId || TooEarlyForRequest(request.lastReceived)) {
-		return;
-	}
-	{
-		const auto it = _data.find(history);
-		if (it != end(_data)) {
-			auto &list = it->second;
-			// Don't rebuild currently displayed messages.
-			const auto proj = [](const Entry &e) {
-				return e.item != nullptr;
-			};
-			if (ranges::any_of(list.entries, proj)) {
-				return;
-			}
-		}
-	}
-	request.requestId = _session->api().request(
-		MTPmessages_GetSponsoredMessages(
-			MTP_flags(0),
-			history->peer->input(),
-			MTPint()) // msg_id
-	).done([=](const MTPmessages_sponsoredMessages &result) {
-		parse(history, result);
-		if (done) {
-			done();
-		}
-	}).fail([=] {
-		_requests.remove(history);
-	}).send();
 }
 
 void SponsoredMessages::requestForVideo(
 		not_null<HistoryItem*> item,
 		Fn<void(SponsoredForVideo)> done) {
 	Expects(done != nullptr);
-
-	if (!canHaveFor(item)) {
-		done({});
-		return;
-	}
-	const auto peer = item->history()->peer;
-	auto &request = _requestsForVideo[peer];
-	if (TooEarlyForRequest(request.lastReceived)) {
-		auto prepared = prepareForVideo(peer);
-		if (prepared.list.empty()
-			|| prepared.state.itemIndex < prepared.list.size()
-			|| prepared.state.leftTillShow > 0) {
-			done(std::move(prepared));
-			return;
-		}
-	}
-	request.callbacks.push_back(std::move(done));
-	if (request.requestId) {
-		return;
-	}
-	{
-		const auto it = _dataForVideo.find(peer);
-		if (it != end(_dataForVideo)) {
-			auto &list = it->second;
-			// Don't rebuild currently displayed messages.
-			const auto proj = [](const Entry &e) {
-				return e.item != nullptr;
-			};
-			if (ranges::any_of(list.entries, proj)) {
-				return;
-			}
-		}
-	}
-	const auto finish = [=] {
-		const auto i = _requestsForVideo.find(peer);
-		if (i != end(_requestsForVideo)) {
-			for (const auto &callback : base::take(i->second.callbacks)) {
-				callback(prepareForVideo(peer));
-			}
-		}
-	};
-	using Flag = MTPmessages_GetSponsoredMessages::Flag;
-	request.requestId = _session->api().request(
-		MTPmessages_GetSponsoredMessages(
-			MTP_flags(Flag::f_msg_id),
-			peer->input(),
-			MTP_int(item->id.bare))
-	).done([=](const MTPmessages_sponsoredMessages &result) {
-		parseForVideo(peer, result);
-		finish();
-	}).fail([=] {
-		_requestsForVideo.remove(peer);
-		finish();
-	}).send();
+	done({});
 }
 
 void SponsoredMessages::updateForVideo(
 		FullMsgId itemId,
 		SponsoredForVideoState state) {
-	if (state.initial()) {
-		return;
-	}
-	const auto i = _dataForVideo.find(_session->data().peer(itemId.peer));
-	if (i != end(_dataForVideo)) {
-		i->second.state = state;
-	}
 }
 
 void SponsoredMessages::parse(
@@ -453,21 +225,6 @@ SponsoredForVideo SponsoredMessages::prepareForVideo(
 FullMsgId SponsoredMessages::fillTopBar(
 		not_null<History*> history,
 		not_null<Ui::RpWidget*> widget) {
-	const auto it = _data.find(history);
-	if (it != end(_data)) {
-		auto &list = it->second;
-		if (!list.entries.empty()) {
-			const auto &entry = list.entries.front();
-			const auto fullId = entry.itemFullId;
-			Ui::FillSponsoredMessageBar(
-				widget,
-				_session,
-				fullId,
-				entry.sponsored.from,
-				entry.sponsored.textWithEntities);
-			return fullId;
-		}
-	}
 	return {};
 }
 
@@ -665,19 +422,6 @@ void SponsoredMessages::view(const FullMsgId &fullId) {
 }
 
 void SponsoredMessages::view(const QByteArray &randomId) {
-	auto &request = _viewRequests[randomId];
-	if (request.requestId || TooEarlyForRequest(request.lastReceived)) {
-		return;
-	}
-	request.requestId = _session->api().request(
-		MTPmessages_ViewSponsoredMessage(MTP_bytes(randomId))
-	).done([=] {
-		auto &request = _viewRequests[randomId];
-		request.lastReceived = crl::now();
-		request.requestId = 0;
-	}).fail([=] {
-		_viewRequests.remove(randomId);
-	}).send();
 }
 
 SponsoredMessages::Details SponsoredMessages::lookupDetails(
@@ -728,13 +472,6 @@ void SponsoredMessages::clicked(
 		const QByteArray &randomId,
 		bool isMedia,
 		bool isFullscreen) {
-	using Flag = MTPmessages_ClickSponsoredMessage::Flag;
-	_session->api().request(MTPmessages_ClickSponsoredMessage(
-		MTP_flags(Flag(0)
-			| (isMedia ? Flag::f_media : Flag(0))
-			| (isFullscreen ? Flag::f_fullscreen : Flag(0))),
-		MTP_bytes(randomId)
-	)).send();
 }
 
 SponsoredReportAction SponsoredMessages::createReportCallback(
@@ -825,8 +562,7 @@ SponsoredReportAction SponsoredMessages::createReportCallback(
 
 SponsoredMessages::State SponsoredMessages::state(
 		not_null<History*> history) const {
-	const auto it = _data.find(history);
-	return (it == end(_data)) ? State::None : it->second.state;
+	return State::None;
 }
 
 } // namespace Data

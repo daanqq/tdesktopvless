@@ -58,6 +58,7 @@ PromoSuggestions::PromoSuggestions(
 PromoSuggestions::~PromoSuggestions() = default;
 
 void PromoSuggestions::refreshTopPromotion() {
+	setTopPromoted(nullptr, QString(), QString());
 	const auto now = base::unixtime::now();
 	const auto next = (_topPromotionNextRequestTime != 0)
 		? _topPromotionNextRequestTime
@@ -125,16 +126,7 @@ void PromoSuggestions::refreshTopPromotion() {
 					|= _dismissedSuggestions.emplace(qs(suggestion)).second;
 			}
 
-			if (const auto peer = data.vpeer()) {
-				const auto peerId = peerFromMTP(*peer);
-				const auto history = _session->data().history(peerId);
-				setTopPromoted(
-					history,
-					data.vpsa_type().value_or_empty(),
-					data.vpsa_message().value_or_empty());
-			} else {
-				setTopPromoted(nullptr, QString(), QString());
-			}
+			setTopPromoted(nullptr, QString(), QString());
 
 			auto changedCustom = false;
 			auto custom = data.vcustom_pending_suggestion()
