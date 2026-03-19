@@ -117,6 +117,7 @@ public:
 	};
 
 	static constexpr auto kDefaultVolume = 0.9;
+	static constexpr auto kMaxVoiceVolume = 1.5;
 
 	Settings();
 	~Settings();
@@ -179,6 +180,19 @@ public:
 	}
 	void setVideoVolume(float64 value) {
 		_videoVolume = value;
+	}
+	[[nodiscard]] float64 voiceVolume() const {
+		return _voiceVolume.current();
+	}
+	[[nodiscard]] rpl::producer<float64> voiceVolumeChanges() const {
+		return _voiceVolume.changes();
+	}
+	void setVoiceVolume(float64 value) {
+		_voiceVolume = (value < 0.)
+			? 0.
+			: (value > kMaxVoiceVolume)
+			? kMaxVoiceVolume
+			: value;
 	}
 	[[nodiscard]] bool askDownloadPath() const {
 		return _askDownloadPath;
@@ -610,6 +624,16 @@ public:
 	void setRememberedSongVolume(float64 value) {
 		_rememberedSongVolume = value;
 	}
+	[[nodiscard]] float64 rememberedVoiceVolume() const {
+		return _rememberedVoiceVolume;
+	}
+	void setRememberedVoiceVolume(float64 value) {
+		_rememberedVoiceVolume = (value < 0.)
+			? 0.
+			: (value > kMaxVoiceVolume)
+			? kMaxVoiceVolume
+			: value;
+	}
 	[[nodiscard]] bool rememberedSoundNotifyFromTray() const {
 		return _rememberedSoundNotifyFromTray;
 	}
@@ -1022,6 +1046,7 @@ private:
 	rpl::variable<bool> _adaptiveForWide = true;
 	bool _moderateModeEnabled = false;
 	rpl::variable<float64> _songVolume = kDefaultVolume;
+	rpl::variable<float64> _voiceVolume = kDefaultVolume;
 	rpl::variable<float64> _videoVolume = kDefaultVolume;
 	bool _askDownloadPath = false;
 	rpl::variable<QString> _downloadPath;
@@ -1143,6 +1168,7 @@ private:
 
 	rpl::event_stream<> _saveDelayed;
 	float64 _rememberedSongVolume = kDefaultVolume;
+	float64 _rememberedVoiceVolume = kDefaultVolume;
 	bool _rememberedSoundNotifyFromTray = false;
 	bool _rememberedFlashBounceNotifyFromTray = false;
 	bool _dialogsWidthSetToZeroWithoutChat = false;

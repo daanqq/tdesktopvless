@@ -128,14 +128,15 @@ Widget::Widget(
 
 	updateVolumeToggleIcon();
 	_volumeToggle->setClickedCallback([=] {
-		const auto volume = (Core::App().settings().songVolume() > 0)
+		const auto volume = (currentVolume() > 0)
 			? 0.
-			: Core::App().settings().rememberedSongVolume();
-		Core::App().settings().setSongVolume(volume);
+			: rememberedVolume();
+		setCurrentVolume(volume);
 		Core::App().saveSettingsDelayed();
-		mixer()->setSongVolume(volume);
 	});
-	Core::App().settings().songVolumeChanges(
+	rpl::merge(
+		Core::App().settings().songVolumeChanges() | rpl::to_empty,
+		Core::App().settings().voiceVolumeChanges() | rpl::to_empty
 	) | rpl::on_next([=] {
 		updateVolumeToggleIcon();
 	}, lifetime());
@@ -192,12 +193,15 @@ Widget::Widget(
 		handleSongUpdate(state);
 	}, lifetime());
 
-	PrepareVolumeDropdown(_volume.get(), controller, _volumeToggle->events(
+	_volumeController = PrepareVolumeDropdown(
+		_volume.get(),
+		controller,
+		_volumeToggle->events(
 	) | rpl::filter([=](not_null<QEvent*> e) {
 		return (e->type() == QEvent::Wheel);
 	}) | rpl::map([=](not_null<QEvent*> e) {
 		return not_null{ static_cast<QWheelEvent*>(e.get()) };
-	}));
+	})).get();
 	_volumeToggle->installEventFilter(_volume.get());
 	_volume->events(
 	) | rpl::on_next([=](not_null<QEvent*> e) {
@@ -244,8 +248,9 @@ void Widget::setupRightControls() {
 }
 
 void Widget::updateVolumeToggleIcon() {
-	_volumeToggle->setIconOverride([] {
-		const auto volume = Core::App().settings().songVolume();
+	const auto ratio = currentVolumeRatio();
+	_volumeToggle->setIconOverride([=] {
+		const auto volume = ratio;
 		return (volume == 0.)
 			? &st::mediaPlayerVolumeIcon0
 			: (volume < 0.66)
@@ -450,6 +455,47 @@ void Widget::saveSpeed(float64 speed) {
 	Core::App().saveSettingsDelayed();
 }
 
+float64 Widget::currentVolume() const {
+	switch (_type) {
+	case AudioMsgId::Type::Voice:
+		return Core::App().settings().voiceVolume();
+	case AudioMsgId::Type::Song:
+	default:
+		return Core::App().settings().songVolume();
+	}
+}
+
+float64 Widget::currentVolumeRatio() const {
+	const auto max = (_type == AudioMsgId::Type::Voice)
+		? Core::Settings::kMaxVoiceVolume
+		: 1.;
+	return currentVolume() / max;
+}
+
+float64 Widget::rememberedVolume() const {
+	switch (_type) {
+	case AudioMsgId::Type::Voice:
+		return Core::App().settings().rememberedVoiceVolume();
+	case AudioMsgId::Type::Song:
+	default:
+		return Core::App().settings().rememberedSongVolume();
+	}
+}
+
+void Widget::setCurrentVolume(float64 volume) {
+	switch (_type) {
+	case AudioMsgId::Type::Voice:
+		Core::App().settings().setVoiceVolume(volume);
+		mixer()->setVoiceVolume(volume);
+		break;
+	case AudioMsgId::Type::Song:
+	default:
+		Core::App().settings().setSongVolume(volume);
+		mixer()->setSongVolume(volume);
+		break;
+	}
+}
+
 void Widget::mouseMoveEvent(QMouseEvent *e) {
 	updateOverLabelsState(e->pos());
 }
@@ -605,6 +651,10 @@ void Widget::updateControlsVisibility() {
 void Widget::setType(AudioMsgId::Type type) {
 	if (_type != type) {
 		_type = type;
+		_volumeController->setType((_type == AudioMsgId::Type::Voice)
+			? VolumeController::Type::Voice
+			: VolumeController::Type::Song);
+		updateVolumeToggleIcon();
 		handleSongChange();
 		updateControlsVisibility();
 		updateLabelsGeometry();

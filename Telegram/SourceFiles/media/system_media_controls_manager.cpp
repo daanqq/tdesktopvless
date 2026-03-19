@@ -62,6 +62,37 @@ SystemMediaControlsManager::SystemMediaControlsManager()
 	}
 	using TrackState = Media::Player::TrackState;
 	const auto mediaPlayer = Media::Player::instance();
+	const auto clampVolume = [](float64 volume) {
+		return (volume < 0.)
+			? 0.
+			: (volume > 1.)
+			? 1.
+			: volume;
+	};
+	const auto activeType = [=] {
+		return mediaPlayer->getActiveType();
+	};
+	const auto systemControlsVolume = [=](AudioMsgId::Type type) {
+		const auto volume = (type == AudioMsgId::Type::Voice)
+			? Core::App().settings().voiceVolume()
+			: Core::App().settings().songVolume();
+		return clampVolume(volume);
+	};
+	const auto saveVolume = [=](AudioMsgId::Type type, float64 volume) {
+		if (type == AudioMsgId::Type::Voice) {
+			Player::mixer()->setVoiceVolume(volume);
+			if (volume > 0) {
+				Core::App().settings().setRememberedVoiceVolume(volume);
+			}
+			Core::App().settings().setVoiceVolume(volume);
+		} else {
+			Player::mixer()->setSongVolume(volume);
+			if (volume > 0) {
+				Core::App().settings().setRememberedSongVolume(volume);
+			}
+			Core::App().settings().setSongVolume(volume);
+		}
+	};
 
 	auto trackFilter = rpl::filter([=](const TrackState &state) {
 		const auto type = state.id.type();
@@ -350,21 +381,44 @@ SystemMediaControlsManager::SystemMediaControlsManager()
 	}, _lifetime);
 
 	if (_controls->volumeSupported()) {
-		rpl::single(
-			Core::App().settings().songVolume()
-		) | rpl::then(
-			Core::App().settings().songVolumeChanges()
-		) | rpl::on_next([=](float64 volume) {
-			_controls->setVolume(volume);
+		rpl::merge(
+			rpl::single(activeType()),
+			mediaPlayer->trackChanged(
+			) | rpl::filter([=](AudioMsgId::Type type) {
+				return (type == AudioMsgId::Type::Song)
+					|| (type == AudioMsgId::Type::Voice);
+			}),
+			mediaPlayer->startsPlay(
+				AudioMsgId::Type::Song
+			) | rpl::map_to(AudioMsgId::Type::Song),
+			mediaPlayer->startsPlay(
+				AudioMsgId::Type::Voice
+			) | rpl::map_to(AudioMsgId::Type::Voice),
+			mediaPlayer->stops(
+				AudioMsgId::Type::Song
+			) | rpl::map([=] {
+				return activeType();
+			}),
+			mediaPlayer->stops(
+				AudioMsgId::Type::Voice
+			) | rpl::map([=] {
+				return activeType();
+			}),
+			Core::App().settings().songVolumeChanges(
+			) | rpl::map([=](float64) {
+				return activeType();
+			}),
+			Core::App().settings().voiceVolumeChanges(
+			) | rpl::map([=](float64) {
+				return activeType();
+			})
+		) | rpl::on_next([=](AudioMsgId::Type type) {
+			_controls->setVolume(systemControlsVolume(type));
 		}, _lifetime);
 
 		_controls->volumeChangeRequests(
-		) | rpl::on_next([](float64 volume) {
-			Player::mixer()->setSongVolume(volume);
-			if (volume > 0) {
-				Core::App().settings().setRememberedSongVolume(volume);
-			}
-			Core::App().settings().setSongVolume(volume);
+		) | rpl::on_next([=](float64 volume) {
+			saveVolume(activeType(), clampVolume(volume));
 		}, _lifetime);
 	}
 

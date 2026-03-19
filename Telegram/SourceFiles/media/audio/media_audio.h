@@ -181,6 +181,8 @@ public:
 	// Thread: Any.
 	void setSongVolume(float64 volume);
 	float64 getSongVolume() const;
+	void setVoiceVolume(float64 volume);
+	float64 getVoiceVolume() const;
 	void setVideoVolume(float64 volume);
 	float64 getVideoVolume() const;
 
@@ -305,6 +307,7 @@ private:
 
 	Track _videoTrack;
 
+	QAtomicInt _volumeVoice;
 	QAtomicInt _volumeVideo;
 	QAtomicInt _volumeSong;
 
@@ -328,6 +331,7 @@ public:
 	Fader(QThread *thread);
 
 	void songVolumeChanged();
+	void voiceVolumeChanged();
 	void videoVolumeChanged();
 
 Q_SIGNALS:
@@ -357,6 +361,7 @@ private:
 	QTimer _timer;
 
 	bool _volumeChangedSong = false;
+	bool _volumeChangedVoice = false;
 	bool _volumeChangedVideo = false;
 
 	bool _suppressAll = false;

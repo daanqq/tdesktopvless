@@ -259,7 +259,7 @@ QByteArray Settings::serialize() const {
 		+ sizeof(ushort)
 		+ sizeof(qint32) // _notificationsDisplayChecksum
 		+ Serialize::bytearraySize(callPanelPosition)
-		+ sizeof(qint32) * 4;
+		+ sizeof(qint32) * 5;
 
 	auto result = QByteArray();
 	result.reserve(size);
@@ -428,7 +428,8 @@ QByteArray Settings::serialize() const {
 			<< qint32(_cornerReply.current() ? 1 : 0)
 			<< qint32(_systemAccentColorEnabled ? 1 : 0)
 			<< qint32(_usePlatformTranslation ? 1 : 0)
-			<< qint32(_systemTextReplace.current() ? 1 : 0);
+			<< qint32(_systemTextReplace.current() ? 1 : 0)
+			<< qint32(qRound(_voiceVolume.current() * 1e6));
 	}
 
 	Ensures(result.size() == size);
@@ -448,6 +449,7 @@ void Settings::addFromSerialized(const QByteArray &serialized) {
 	qint32 moderateModeEnabled = _moderateModeEnabled ? 1 : 0;
 	qint32 songVolume = qint32(qRound(_songVolume.current() * 1e6));
 	qint32 videoVolume = qint32(qRound(_videoVolume.current() * 1e6));
+	qint32 voiceVolume = qint32(qRound(_voiceVolume.current() * 1e6));
 	qint32 askDownloadPath = _askDownloadPath ? 1 : 0;
 	QString downloadPath = _downloadPath.current();
 	QByteArray downloadPathBookmark = _downloadPathBookmark;
@@ -919,6 +921,9 @@ void Settings::addFromSerialized(const QByteArray &serialized) {
 	if (!stream.atEnd()) {
 		stream >> systemTextReplace;
 	}
+	if (!stream.atEnd()) {
+		stream >> voiceVolume;
+	}
 	if (stream.status() != QDataStream::Ok) {
 		LOG(("App Error: "
 			"Bad data for Core::Settings::constructFromSerialized()"));
@@ -931,6 +936,10 @@ void Settings::addFromSerialized(const QByteArray &serialized) {
 	_adaptiveForWide = (adaptiveForWide == 1);
 	_moderateModeEnabled = (moderateModeEnabled == 1);
 	_songVolume = std::clamp(songVolume / 1e6, 0., 1.);
+	_voiceVolume = std::clamp(
+		voiceVolume / 1e6,
+		0.,
+		kMaxVoiceVolume);
 	_videoVolume = std::clamp(videoVolume / 1e6, 0., 1.);
 	_askDownloadPath = (askDownloadPath == 1);
 	_downloadPath = downloadPath;
@@ -1465,7 +1474,10 @@ void Settings::resetOnLastLogout() {
 	_moderateModeEnabled = false;
 
 	_songVolume = kDefaultVolume;
+	_voiceVolume = kDefaultVolume;
 	_videoVolume = kDefaultVolume;
+	_rememberedSongVolume = kDefaultVolume;
+	_rememberedVoiceVolume = kDefaultVolume;
 
 	_askDownloadPath = false;
 	_downloadPath = QString();

@@ -269,6 +269,12 @@ void MediaSlider::disablePaint(bool disabled) {
 
 void MediaSlider::addDivider(float64 atValue, const QSize &size) {
 	_dividers.push_back(Divider{ atValue, size });
+	update();
+}
+
+void MediaSlider::clearDividers() {
+	_dividers.clear();
+	update();
 }
 
 void MediaSlider::setColorOverrides(ColorOverrides overrides) {

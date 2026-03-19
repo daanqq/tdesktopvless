@@ -252,7 +252,7 @@ float64 ComputeVolume(AudioMsgId::Type type) {
 	const auto gain = [&] {
 		switch (type) {
 		case AudioMsgId::Type::Voice:
-			return VolumeMultiplierAll * mixer()->getSongVolume();
+			return VolumeMultiplierAll * mixer()->getVoiceVolume();
 		case AudioMsgId::Type::Song:
 			return VolumeMultiplierSong * mixer()->getSongVolume();
 		case AudioMsgId::Type::Video: return mixer()->getVideoVolume();
@@ -267,8 +267,14 @@ Mixer *mixer() {
 }
 
 void Mixer::Track::createStream(AudioMsgId::Type type) {
+	const auto maxGain = (type == AudioMsgId::Type::Voice)
+		? Core::Settings::kMaxVoiceVolume
+			* Core::Settings::kMaxVoiceVolume
+			* Core::Settings::kMaxVoiceVolume
+		: 1.;
 	alGenSources(1, &stream.source);
 	alSourcef(stream.source, AL_PITCH, 1.f);
+	alSourcef(stream.source, AL_MAX_GAIN, maxGain);
 	alSource3f(stream.source, AL_POSITION, 0, 0, 0);
 	alSource3f(stream.source, AL_VELOCITY, 0, 0, 0);
 	alSourcei(stream.source, AL_LOOPING, 0);
@@ -463,6 +469,7 @@ Mixer::Track::~Track() = default;
 
 Mixer::Mixer(not_null<Audio::Instance*> instance)
 : _instance(instance)
+, _volumeVoice(kVolumeRound)
 , _volumeVideo(kVolumeRound)
 , _volumeSong(kVolumeRound)
 , _fader(new Fader(&_faderThread))
@@ -475,6 +482,13 @@ Mixer::Mixer(not_null<Audio::Instance*> instance)
 	) | rpl::on_next([=] {
 		InvokeQueued(_fader, [fader = _fader] {
 			fader->songVolumeChanged();
+		});
+	}, _lifetime);
+
+	Core::App().settings().voiceVolumeChanges(
+	) | rpl::on_next([=] {
+		InvokeQueued(_fader, [fader = _fader] {
+			fader->voiceVolumeChanged();
 		});
 	}, _lifetime);
 
@@ -673,6 +687,7 @@ void Mixer::play(
 	Expects(audio.externalPlayId() != 0);
 
 	setSongVolume(Core::App().settings().songVolume());
+	setVoiceVolume(Core::App().settings().voiceVolume());
 	setVideoVolume(Core::App().settings().videoVolume());
 
 	auto type = audio.type();
@@ -1074,6 +1089,14 @@ float64 Mixer::getSongVolume() const {
 	return float64(_volumeSong.loadAcquire()) / kVolumeRound;
 }
 
+void Mixer::setVoiceVolume(float64 volume) {
+	_volumeVoice.storeRelease(qRound(volume * kVolumeRound));
+}
+
+float64 Mixer::getVoiceVolume() const {
+	return float64(_volumeVoice.loadAcquire()) / kVolumeRound;
+}
+
 void Mixer::setVideoVolume(float64 volume) {
 	_volumeVideo.storeRelease(qRound(volume * kVolumeRound));
 }
@@ -1156,15 +1179,20 @@ void Fader::onTimer() {
 	auto suppressGainForMusic = ComputeVolume(AudioMsgId::Type::Song);
 	auto suppressGainForMusicChanged = volumeChangedSong || _volumeChangedSong;
 	auto suppressGainForVoice = ComputeVolume(AudioMsgId::Type::Voice);
+	auto suppressGainForVoiceChanged = volumeChangedAll || _volumeChangedVoice;
 	for (auto i = 0; i != kTogetherLimit; ++i) {
-		updatePlayback(AudioMsgId::Type::Voice, i, suppressGainForVoice, suppressGainForMusicChanged);
+		updatePlayback(
+			AudioMsgId::Type::Voice,
+			i,
+			suppressGainForVoice,
+			suppressGainForVoiceChanged);
 		updatePlayback(AudioMsgId::Type::Song, i, suppressGainForMusic, suppressGainForMusicChanged);
 	}
 	auto suppressGainForVideo = ComputeVolume(AudioMsgId::Type::Video);
 	auto suppressGainForVideoChanged = volumeChangedAll || _volumeChangedVideo;
 	updatePlayback(AudioMsgId::Type::Video, 0, suppressGainForVideo, suppressGainForVideoChanged);
 
-	_volumeChangedSong = _volumeChangedVideo = false;
+	_volumeChangedSong = _volumeChangedVoice = _volumeChangedVideo = false;
 
 	if (hasFading) {
 		_timer.start(kCheckFadingTimeout);
@@ -1332,6 +1360,11 @@ void Fader::onSuppressAll(qint64 duration) {
 
 void Fader::songVolumeChanged() {
 	_volumeChangedSong = true;
+	onTimer();
+}
+
+void Fader::voiceVolumeChanged() {
+	_volumeChangedVoice = true;
 	onTimer();
 }
 

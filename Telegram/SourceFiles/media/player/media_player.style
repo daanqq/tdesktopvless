@@ -248,6 +248,7 @@ mediaPlayerVolumeToggle: IconButton(mediaPlayerRepeatButton) {
 }
 mediaPlayerVolumeMargin: 10px;
 mediaPlayerVolumeSize: size(27px, 100px);
+mediaPlayerVolumeDivider: size(3px, 15px);
 
 mediaPlayerControlsFade: icon {{ "fade_horizontal", mediaPlayerBg }};
 

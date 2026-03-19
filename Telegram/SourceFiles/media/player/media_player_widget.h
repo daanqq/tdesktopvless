@@ -38,6 +38,7 @@ class SessionController;
 namespace Media::Player {
 
 class Dropdown;
+class VolumeController;
 class SpeedButton;
 class OrderController;
 class SpeedController;
@@ -98,6 +99,10 @@ private:
 	void destroyPrevNextButtons();
 
 	bool hasPlaybackSpeedControl() const;
+	[[nodiscard]] float64 currentVolume() const;
+	[[nodiscard]] float64 currentVolumeRatio() const;
+	[[nodiscard]] float64 rememberedVolume() const;
+	void setCurrentVolume(float64 volume);
 	void updateVolumeToggleIcon();
 
 	void checkForTypeChange();
@@ -154,6 +159,7 @@ private:
 	object_ptr<Ui::PlainShadow> _shadow = { nullptr };
 	object_ptr<Ui::FilledSlider> _playbackSlider;
 	base::unique_qptr<Dropdown> _volume;
+	VolumeController *_volumeController = nullptr;
 	std::unique_ptr<View::PlaybackProgress> _playbackProgress;
 	std::unique_ptr<OrderController> _orderController;
 	std::unique_ptr<SpeedController> _speedController;

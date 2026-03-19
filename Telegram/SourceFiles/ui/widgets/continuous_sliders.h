@@ -238,6 +238,7 @@ public:
 
 	void setColorOverrides(ColorOverrides overrides);
 	void addDivider(float64 atValue, const QSize &size);
+	void clearDividers();
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
