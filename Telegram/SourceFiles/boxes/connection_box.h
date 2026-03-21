@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include <memory>
+
 #include "base/timer.h"
 #include "base/object_ptr.h"
 #include "core/core_settings_proxy.h"
@@ -33,6 +35,8 @@ class Account;
 namespace Window {
 class SessionController;
 } // namespace Window
+
+class VlessPingProbe;
 
 class ProxiesBoxController {
 public:
@@ -105,6 +109,7 @@ private:
 		bool deleted = false;
 		Checker checker;
 		Checker checkerv6;
+		std::unique_ptr<VlessPingProbe> probe;
 		ItemState state = ItemState::Checking;
 		int ping = 0;
 
@@ -117,7 +122,14 @@ private:
 	void share(const ProxyData &proxy, bool qr = false);
 	void saveDelayed();
 	void refreshChecker(Item &item);
-	void setupChecker(int id, const Checker &checker);
+	void startChecker(
+		Item &item,
+		const ProxyData &proxy,
+		VlessPingProbe *probe = nullptr);
+	void setupChecker(
+		int id,
+		const Checker &checker,
+		VlessPingProbe *probe = nullptr);
 
 	void replaceItemWith(
 		std::vector<Item>::iterator which,

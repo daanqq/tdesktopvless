@@ -10,6 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/call_delayed.h"
 #include "base/qthelp_regex.h"
 #include "base/qthelp_url.h"
+#include "base/weak_ptr.h"
+#include "core/xray_proxy_manager.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "core/local_url_handlers.h"
@@ -53,6 +55,91 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
+#include <QtCore/QObject>
+
+#include <condition_variable>
+#include <mutex>
+
+class VlessPingProbe final : public QObject {
+public:
+	using ReadyCallback = Fn<void(MTP::ProxyData &&)>;
+	using FailedCallback = Fn<void()>;
+
+	void start(
+		const MTP::ProxyData &proxy,
+		ReadyCallback ready,
+		FailedCallback failed) {
+		cancel();
+		_ready = std::move(ready);
+		_failed = std::move(failed);
+		auto state = std::make_shared<State>();
+		_state = state;
+		const auto weak = base::make_weak(this);
+		crl::async([state, proxy, weak] {
+			auto manager = Core::XrayProxyManager();
+			manager.applyProxy(proxy, MTP::ProxyData::Settings::Enabled);
+			if (manager.state() != Core::XrayProxyManager::State::Running) {
+				crl::on_main(weak, [=] {
+					if (weak) {
+						weak->failed();
+					}
+				});
+				return;
+			}
+			auto effective = manager.effectiveProxy();
+			if (!effective) {
+				crl::on_main(weak, [=] {
+					if (weak) {
+						weak->failed();
+					}
+				});
+				return;
+			}
+			crl::on_main(weak, [=, effective = std::move(effective)]() mutable {
+				if (weak) {
+					weak->ready(std::move(effective));
+				}
+			});
+			std::unique_lock lock(state->mutex);
+			state->cv.wait(lock, [&] { return state->stop; });
+		});
+	}
+
+	void cancel() {
+		const auto state = base::take(_state);
+		if (!state) {
+			return;
+		}
+		{
+			std::lock_guard lock(state->mutex);
+			state->stop = true;
+		}
+		state->cv.notify_all();
+	}
+
+private:
+	struct State {
+		std::mutex mutex;
+		std::condition_variable cv;
+		bool stop = false;
+	};
+
+	void ready(MTP::ProxyData &&proxy) {
+		if (_ready) {
+			_ready(std::move(proxy));
+		}
+	}
+
+	void failed() {
+		if (_failed) {
+			_failed();
+		}
+	}
+
+	std::shared_ptr<State> _state;
+	ReadyCallback _ready;
+	FailedCallback _failed;
+};
 
 namespace {
 
@@ -1561,17 +1648,54 @@ auto ProxiesBoxController::proxySettingsValue() const
 }
 
 void ProxiesBoxController::refreshChecker(Item &item) {
-	using Variants = MTP::DcOptions::Variants;
-	if (item.data.type == Type::Vless) {
-		item.checker = nullptr;
-		item.checkerv6 = nullptr;
+	item.checker = nullptr;
+	item.checkerv6 = nullptr;
+	item.probe.reset();
+
+	if (!item.data.valid()) {
 		item.ping = 0;
-		item.state = item.data.valid()
-			? ItemState::Available
-			: ItemState::Unavailable;
+		item.state = ItemState::Unavailable;
+		updateView(item);
 		return;
 	}
-	const auto type = (item.data.type == Type::Http)
+
+	if (item.data.type == Type::Vless) {
+		item.ping = 0;
+		item.state = ItemState::Checking;
+		const auto id = item.id;
+		auto &probe = item.probe;
+		probe = std::make_unique<VlessPingProbe>();
+		const auto rawProbe = probe.get();
+		probe->start(
+			item.data,
+			[=](ProxyData &&effective) {
+				const auto current = findById(id);
+				if (current->probe.get() != rawProbe) {
+					return;
+				}
+				startChecker(*current, effective, rawProbe);
+			},
+			[=] {
+				const auto current = findById(id);
+				if (current->probe.get() != rawProbe) {
+					return;
+				}
+				current->state = ItemState::Unavailable;
+				updateView(*current);
+				current->probe.reset();
+			});
+		return;
+	}
+
+	startChecker(item, item.data);
+}
+
+void ProxiesBoxController::startChecker(
+		Item &item,
+		const ProxyData &proxy,
+		VlessPingProbe *probe) {
+	using Variants = MTP::DcOptions::Variants;
+	const auto type = (proxy.type == Type::Http)
 		? Variants::Http
 		: Variants::Tcp;
 	const auto mtproto = &_account->mtp();
@@ -1585,15 +1709,15 @@ void ProxiesBoxController::refreshChecker(Item &item) {
 			type,
 			QThread::currentThread(),
 			secret,
-			item.data);
-		setupChecker(item.id, checker);
+			proxy);
+		setupChecker(item.id, checker, probe);
 	};
-	if (item.data.type == Type::Mtproto) {
-		const auto secret = item.data.secretFromMtprotoPassword();
+	if (proxy.type == Type::Mtproto) {
+		const auto secret = proxy.secretFromMtprotoPassword();
 		setup(item.checker, secret);
 		item.checker->connectToServer(
-			item.data.host,
-			item.data.port,
+			proxy.host,
+			proxy.port,
 			secret,
 			dcId,
 			forFiles);
@@ -1626,11 +1750,18 @@ void ProxiesBoxController::refreshChecker(Item &item) {
 		connect(item.checkerv6, Variants::IPv6);
 		if (!item.checker && !item.checkerv6) {
 			item.state = ItemState::Unavailable;
+			updateView(item);
+			if (probe && item.probe.get() == probe) {
+				item.probe.reset();
+			}
 		}
 	}
 }
 
-void ProxiesBoxController::setupChecker(int id, const Checker &checker) {
+void ProxiesBoxController::setupChecker(
+		int id,
+		const Checker &checker,
+		VlessPingProbe *probe) {
 	using Connection = MTP::details::AbstractConnection;
 	const auto pointer = checker.get();
 	pointer->connect(pointer, &Connection::connected, [=] {
@@ -1642,6 +1773,9 @@ void ProxiesBoxController::setupChecker(int id, const Checker &checker) {
 			item->state = ItemState::Available;
 			item->ping = pingTime;
 			updateView(*item);
+			if (probe && item->probe.get() == probe) {
+				item->probe.reset();
+			}
 		}
 	});
 	const auto failed = [=] {
@@ -1656,6 +1790,9 @@ void ProxiesBoxController::setupChecker(int id, const Checker &checker) {
 			&& item->state == ItemState::Checking) {
 			item->state = ItemState::Unavailable;
 			updateView(*item);
+			if (probe && item->probe.get() == probe) {
+				item->probe.reset();
+			}
 		}
 	};
 	pointer->connect(pointer, &Connection::disconnected, failed);
