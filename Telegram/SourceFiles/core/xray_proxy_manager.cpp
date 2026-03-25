@@ -9,6 +9,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "settings.h"
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -26,6 +30,7 @@ namespace {
 
 constexpr auto kStartTimeout = 3000;
 constexpr auto kLocalProxyTimeout = 3000;
+constexpr auto kStopTimeout = 1000;
 
 [[nodiscard]] QString HashProxy(const MTP::ProxyData &proxy) {
 	auto basis = proxy.toVlessLink();
@@ -80,6 +85,32 @@ constexpr auto kLocalProxyTimeout = 3000;
 	return QString();
 }
 
+#ifdef Q_OS_WIN
+[[nodiscard]] QString WindowsErrorText(const QString &prefix) {
+	const auto code = GetLastError();
+	auto buffer = LPWSTR(nullptr);
+	const auto size = FormatMessageW(
+		FORMAT_MESSAGE_ALLOCATE_BUFFER
+			| FORMAT_MESSAGE_FROM_SYSTEM
+			| FORMAT_MESSAGE_IGNORE_INSERTS,
+		nullptr,
+		code,
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+		reinterpret_cast<LPWSTR>(&buffer),
+		0,
+		nullptr);
+	const auto message = size
+		? QString::fromWCharArray(buffer, size).trimmed()
+		: u"Unknown Windows error."_q;
+	if (buffer) {
+		LocalFree(buffer);
+	}
+	return prefix.isEmpty()
+		? u"%1 (%2)"_q.arg(message).arg(code)
+		: u"%1: %2 (%3)"_q.arg(prefix).arg(message).arg(code);
+}
+#endif
+
 } // namespace
 
 XrayProxyManager::XrayProxyManager(QObject *parent)
@@ -101,19 +132,14 @@ void XrayProxyManager::applyProxy(
 		|| proxy.type != MTP::ProxyData::Type::Vless) {
 		stop();
 		return;
+	} else if (sameProxyRunning(proxy)) {
+		return;
 	}
 	start(proxy);
 }
 
 void XrayProxyManager::stop() {
-	if (_process) {
-		_process->disconnect(this);
-		if (_process->state() != QProcess::NotRunning) {
-			_process->kill();
-			_process->waitForFinished(1000);
-		}
-		_process.reset();
-	}
+	cleanupProcess();
 	clearState();
 	_state = State::Stopped;
 }
@@ -285,6 +311,13 @@ MTP::ProxyData XrayProxyManager::localProxy(int localPort) const {
 	};
 }
 
+bool XrayProxyManager::sameProxyRunning(const MTP::ProxyData &proxy) const {
+	return (_state == State::Starting || _state == State::Running)
+		&& (_sourceProxy == proxy)
+		&& _process
+		&& (_process->state() != QProcess::NotRunning);
+}
+
 void XrayProxyManager::start(const MTP::ProxyData &proxy) {
 	stop();
 
@@ -354,6 +387,43 @@ void XrayProxyManager::start(const MTP::ProxyData &proxy) {
 		fail(_process->errorString());
 		return;
 	}
+
+#ifdef Q_OS_WIN
+	const auto job = CreateJobObjectW(nullptr, nullptr);
+	if (!job) {
+		fail(WindowsErrorText(u"Could not create Xray job object."_q));
+		return;
+	}
+	auto limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+	limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+	if (!SetInformationJobObject(
+			job,
+			JobObjectExtendedLimitInformation,
+			&limits,
+			sizeof(limits))) {
+		CloseHandle(job);
+		fail(WindowsErrorText(u"Could not configure Xray job object."_q));
+		return;
+	}
+	const auto processHandle = OpenProcess(
+		PROCESS_SET_QUOTA | PROCESS_TERMINATE,
+		FALSE,
+		DWORD(_process->processId()));
+	if (!processHandle) {
+		CloseHandle(job);
+		fail(WindowsErrorText(u"Could not open Xray process."_q));
+		return;
+	}
+	const auto assigned = AssignProcessToJobObject(job, processHandle);
+	CloseHandle(processHandle);
+	if (!assigned) {
+		CloseHandle(job);
+		fail(WindowsErrorText(u"Could not assign Xray to job object."_q));
+		return;
+	}
+	_job = job;
+#endif
+
 	if (!WaitForLocalProxy(localPort)) {
 		const auto logError = LastNonEmptyLogLine(logPath(proxy));
 		fail(logError.isEmpty()
@@ -367,16 +437,38 @@ void XrayProxyManager::start(const MTP::ProxyData &proxy) {
 	_state = State::Running;
 }
 
-void XrayProxyManager::fail(const QString &error) {
-	const auto keepEffectiveProxy = (_state == State::Running);
+void XrayProxyManager::cleanupProcess() {
 	if (_process) {
 		_process->disconnect(this);
 		if (_process->state() != QProcess::NotRunning) {
-			_process->kill();
-			_process->waitForFinished(1000);
+			_process->terminate();
+			if (!_process->waitForFinished(kStopTimeout)) {
+				_process->kill();
+				_process->waitForFinished(kStopTimeout);
+			}
+		}
+		closeJob();
+		if (_process->state() != QProcess::NotRunning) {
+			_process->waitForFinished(kStopTimeout);
 		}
 		_process.reset();
+	} else {
+		closeJob();
 	}
+}
+
+void XrayProxyManager::closeJob() {
+#ifdef Q_OS_WIN
+	if (_job) {
+		CloseHandle(HANDLE(_job));
+		_job = nullptr;
+	}
+#endif
+}
+
+void XrayProxyManager::fail(const QString &error) {
+	const auto keepEffectiveProxy = (_state == State::Running);
+	cleanupProcess();
 	if (!keepEffectiveProxy) {
 		clearState();
 	}

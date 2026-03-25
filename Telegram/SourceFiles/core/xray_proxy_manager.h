@@ -50,8 +50,11 @@ private:
 		const MTP::ProxyData &proxy,
 		int localPort) const;
 	[[nodiscard]] MTP::ProxyData localProxy(int localPort) const;
+	[[nodiscard]] bool sameProxyRunning(const MTP::ProxyData &proxy) const;
 
 	void start(const MTP::ProxyData &proxy);
+	void cleanupProcess();
+	void closeJob();
 	void fail(const QString &error);
 	void clearState();
 
@@ -61,6 +64,9 @@ private:
 	MTP::ProxyData _sourceProxy;
 	MTP::ProxyData _effectiveProxy;
 	std::unique_ptr<QProcess> _process;
+#ifdef Q_OS_WIN
+	void *_job = nullptr;
+#endif
 
 };
 

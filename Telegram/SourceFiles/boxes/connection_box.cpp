@@ -65,6 +65,10 @@ public:
 	using ReadyCallback = Fn<void(MTP::ProxyData &&)>;
 	using FailedCallback = Fn<void()>;
 
+	~VlessPingProbe() {
+		cancel();
+	}
+
 	void start(
 		const MTP::ProxyData &proxy,
 		ReadyCallback ready,
