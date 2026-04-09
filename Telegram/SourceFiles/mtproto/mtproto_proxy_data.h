@@ -67,6 +67,7 @@ struct ProxyData {
 	QString host;
 	uint32 port = 0;
 	QString user, password;
+	QString customName;
 	VlessConfig vless;
 
 	std::vector<QString> resolvedIPs;

@@ -627,6 +627,8 @@ proxyRowTitlePalette: TextPalette(defaultTextPalette) {
 proxyRowTitleStyle: TextStyle(defaultTextStyle) {
 	font: semiboldFont;
 }
+proxyRowNameSkip: 2px;
+proxyRowNameFg: windowFg;
 proxyRowStatusFg: windowSubTextFg;
 proxyRowStatusFgOnline: windowActiveTextFg;
 proxyRowStatusFgOffline: boxTextFgError;

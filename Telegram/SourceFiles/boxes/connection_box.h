@@ -69,6 +69,7 @@ public:
 		int id = 0;
 		QString type;
 		QString host;
+		QString customName;
 		uint32 port = 0;
 		int ping = 0;
 		bool selected = false;
@@ -133,7 +134,8 @@ private:
 
 	void replaceItemWith(
 		std::vector<Item>::iterator which,
-		std::vector<Item>::iterator with);
+		std::vector<Item>::iterator with,
+		const ProxyData &proxy);
 	void replaceItemValue(
 		std::vector<Item>::iterator which,
 		const ProxyData &proxy);

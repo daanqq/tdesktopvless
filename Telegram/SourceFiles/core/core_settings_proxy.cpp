@@ -14,7 +14,7 @@ namespace Core {
 namespace {
 
 constexpr auto kProxyDataVersionTag = qint32(0x564c5353);
-constexpr auto kProxyDataVersion = qint32(3);
+constexpr auto kProxyDataVersion = qint32(4);
 
 [[nodiscard]] qint32 ProxySettingsToInt(MTP::ProxyData::Settings settings) {
 	switch(settings) {
@@ -151,11 +151,17 @@ constexpr auto kProxyDataVersion = qint32(3);
 		>> proxy.user
 		>> proxy.password;
 	if (stream.status() != QDataStream::Ok
-		|| (version != 2 && version != kProxyDataVersion)) {
+		|| (version != 2 && version != 3 && version != kProxyDataVersion)) {
 		return MTP::ProxyData();
 	}
 	proxy.port = port;
 	proxy.type = IntToProxyType(proxyType);
+	if (version >= 4) {
+		stream >> proxy.customName;
+		if (stream.status() != QDataStream::Ok) {
+			return MTP::ProxyData();
+		}
+	}
 	if (proxy.type == MTP::ProxyData::Type::Vless) {
 		qint32 transport = 0;
 		qint32 security = 0;
@@ -214,6 +220,7 @@ constexpr auto kProxyDataVersion = qint32(3);
 		+ 1 * sizeof(qint32)
 		+ Serialize::stringSize(proxy.user)
 		+ Serialize::stringSize(proxy.password)
+		+ Serialize::stringSize(proxy.customName)
 		+ ((proxy.type == MTP::ProxyData::Type::Vless)
 			? Serialize::stringSize(proxy.vless.id)
 				+ 3 * sizeof(qint32)
@@ -245,7 +252,8 @@ constexpr auto kProxyDataVersion = qint32(3);
 		<< proxy.host
 		<< qint32(proxy.port)
 		<< proxy.user
-		<< proxy.password;
+		<< proxy.password
+		<< proxy.customName;
 	if (proxy.type == MTP::ProxyData::Type::Vless) {
 		stream
 			<< proxy.vless.id

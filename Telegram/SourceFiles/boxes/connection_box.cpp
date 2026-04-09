@@ -151,6 +151,17 @@ constexpr auto kSaveSettingsDelayedTimeout = crl::time(1000);
 
 using ProxyData = MTP::ProxyData;
 
+[[nodiscard]] int ProxyRowHeight(bool hasCustomName) {
+	return st::proxyRowPadding.top()
+		+ st::semiboldFont->height
+		+ st::proxyRowSkip
+		+ (hasCustomName
+			? (st::normalFont->height + st::proxyRowNameSkip)
+			: 0)
+		+ st::normalFont->height
+		+ st::proxyRowPadding.bottom();
+}
+
 [[nodiscard]] std::vector<QString> ExtractUrlsSimple(const QString &input) {
 	auto urls = std::vector<QString>();
 	static auto urlRegex = QRegularExpression(
@@ -530,6 +541,7 @@ private:
 	void share();
 	void setupControls(const ProxyData &data);
 	void setupTypes();
+	void setupCustomName(const ProxyData &data);
 	void setupSocketAddress(const ProxyData &data);
 	void setupCredentials(const ProxyData &data);
 	void setupMtprotoCredentials(const ProxyData &data);
@@ -547,6 +559,7 @@ private:
 	std::shared_ptr<Ui::RadioenumGroup<Type>> _type;
 
 	QPointer<Ui::SlideWrap<>> _aboutSponsored;
+	QPointer<Ui::InputField> _customName;
 	QPointer<Ui::SlideWrap<Ui::VerticalLayout>> _socketAddress;
 	QPointer<HostInput> _host;
 	QPointer<Ui::NumberInput> _port;
@@ -660,11 +673,7 @@ void ProxyRow::radialAnimationCallback() {
 }
 
 int ProxyRow::resizeGetHeight(int newWidth) {
-	const auto result = st::proxyRowPadding.top()
-		+ st::semiboldFont->height
-		+ st::proxyRowSkip
-		+ st::normalFont->height
-		+ st::proxyRowPadding.bottom();
+	const auto result = ProxyRowHeight(!_view.customName.isEmpty());
 	auto right = st::proxyRowPadding.right();
 	_menuToggle->moveToRight(
 		right,
@@ -699,6 +708,17 @@ void ProxyRow::paintEvent(QPaintEvent *e) {
 	p.setTextPalette(st::proxyRowTitlePalette);
 	_title.drawLeftElided(p, left, top, availableWidth, width());
 	top += st::semiboldFont->height + st::proxyRowSkip;
+
+	if (!_view.customName.isEmpty()) {
+		p.setPen(st::proxyRowNameFg);
+		p.setFont(st::normalFont);
+		p.drawTextLeft(
+			left,
+			top,
+			width(),
+			st::normalFont->elided(_view.customName, availableWidth));
+		top += st::normalFont->height + st::proxyRowNameSkip;
+	}
 
 	const auto statusFg = [&] {
 		switch (_view.state) {
@@ -1104,11 +1124,7 @@ void ProxiesBox::refreshProxyForCalls() {
 }
 
 int ProxiesBox::rowHeight() const {
-	return st::proxyRowPadding.top()
-		+ st::semiboldFont->height
-		+ st::proxyRowSkip
-		+ st::normalFont->height
-		+ st::proxyRowPadding.bottom();
+	return ProxyRowHeight(true);
 }
 
 void ProxiesBox::addNewProxy() {
@@ -1144,6 +1160,10 @@ void ProxiesBox::applyView(View &&view) {
 		_rows.erase(i);
 	} else {
 		i->second->updateFields(std::move(view));
+		const auto wrap = _wrap
+			? _wrap.data()
+			: _initialWrap.data();
+		wrap->resizeToWidth(width());
 	}
 }
 
@@ -1239,7 +1259,13 @@ void ProxyBox::prepare() {
 	}, _port->lifetime());
 
 	const auto submit = [=] {
-		if (_type->current() == Type::Vless) {
+		if (_customName->hasFocus()) {
+			if (_type->current() == Type::Vless) {
+				_vlessLink->setFocus();
+			} else {
+				_host->setFocus();
+			}
+		} else if (_type->current() == Type::Vless) {
 			save();
 			return;
 		}
@@ -1259,6 +1285,8 @@ void ProxyBox::prepare() {
 			save();
 		}
 	};
+	_customName->submits(
+	) | rpl::on_next(submit, _customName->lifetime());
 	connect(_host.data(), &Ui::MaskedInputField::submitted, submit);
 	connect(_port.data(), &Ui::MaskedInputField::submitted, submit);
 	_user->submits(
@@ -1299,11 +1327,14 @@ void ProxyBox::share() {
 ProxyData ProxyBox::collectData() {
 	auto result = ProxyData();
 	result.type = _type->current();
+	result.customName = _customName->getLastText().trimmed();
 	if (result.type == Type::Vless) {
 		const auto link = _vlessLink->getLastText().trimmed();
 		const auto parsed = ProxyData::TryParseVlessLink(link);
 		if (parsed) {
-			return *parsed;
+			auto proxy = *parsed;
+			proxy.customName = result.customName;
+			return proxy;
 		}
 		const auto status = ProxyData::VlessLinkStatus(link);
 		_vlessLink->showError();
@@ -1363,6 +1394,17 @@ void ProxyBox::setupTypes() {
 				tr::lng_proxy_sponsor_warning(tr::now),
 				st::boxDividerLabel),
 			st::proxyAboutSponsorPadding)));
+}
+
+void ProxyBox::setupCustomName(const ProxyData &data) {
+	addLabel(_content, tr::lng_proxy_name_label(tr::now));
+	_customName = _content->add(
+		object_ptr<Ui::InputField>(
+			_content,
+			st::connectionUserInputField,
+			tr::lng_proxy_name_ph(),
+			data.customName),
+		st::proxyEditInputPadding);
 }
 
 void ProxyBox::setupSocketAddress(const ProxyData &data) {
@@ -1483,6 +1525,7 @@ void ProxyBox::setupControls(const ProxyData &data) {
 	_content->moveToLeft(0, 0);
 
 	setupTypes();
+	setupCustomName(data);
 	setupSocketAddress(data);
 	setupCredentials(data);
 	setupMtprotoCredentials(data);
@@ -1967,7 +2010,7 @@ object_ptr<Ui::BoxContent> ProxiesBoxController::editItemBox(int id) {
 			result,
 			[](const Item &item) { return item.data; });
 		if (j != end(_list) && j != i) {
-			replaceItemWith(i, j);
+			replaceItemWith(i, j, result);
 		} else {
 			replaceItemValue(i, result);
 		}
@@ -1978,35 +2021,76 @@ object_ptr<Ui::BoxContent> ProxiesBoxController::editItemBox(int id) {
 
 void ProxiesBoxController::replaceItemWith(
 		std::vector<Item>::iterator which,
-		std::vector<Item>::iterator with) {
+		std::vector<Item>::iterator with,
+		const ProxyData &proxy) {
 	auto &proxies = _settings.list();
+	const auto selectedWasWhich = (_settings.selected() == which->data);
+	const auto selectedWasWith = (_settings.selected() == with->data);
+	const auto lastSelectedWasWhich = (_lastSelectedProxy == which->data);
+	const auto lastSelectedWasWith = (_lastSelectedProxy == with->data);
+	auto updated = with->data;
+	updated.customName = proxy.customName;
+	const auto targetProxy = ranges::find(proxies, with->data);
+	Assert(targetProxy != end(proxies));
+	*targetProxy = updated;
+	with->data = updated;
+	if (selectedWasWith && !selectedWasWhich) {
+		_settings.setSelected(updated);
+	}
+	if (lastSelectedWasWhich || lastSelectedWasWith) {
+		_lastSelectedProxy = updated;
+	}
 	proxies.erase(ranges::remove(proxies, which->data), end(proxies));
 
+	const auto withId = with->id;
+	const auto withDeleted = with->deleted;
 	_views.fire({ which->id });
 	_list.erase(which);
 
-	if (with->deleted) {
-		restoreItem(with->id);
+	if (withDeleted) {
+		restoreItem(withId);
 	}
-	applyItem(with->id);
+	if (selectedWasWith && !selectedWasWhich && _settings.isEnabled()) {
+		updateView(*findById(withId));
+	} else {
+		applyItem(withId);
+	}
 	saveDelayed();
 }
 
 void ProxiesBoxController::replaceItemValue(
 		std::vector<Item>::iterator which,
 		const ProxyData &proxy) {
+	const auto previous = which->data;
+	const auto technicalChanged = !(previous == proxy);
+	const auto selected = (_settings.selected() == previous);
+	const auto lastSelected = (_lastSelectedProxy == previous);
+	auto updated = proxy;
+	if (!technicalChanged) {
+		updated.resolvedIPs = previous.resolvedIPs;
+		updated.resolvedExpireAt = previous.resolvedExpireAt;
+	}
 	if (which->deleted) {
 		restoreItem(which->id);
 	}
 
 	auto &proxies = _settings.list();
-	const auto i = ranges::find(proxies, which->data);
+	const auto i = ranges::find(proxies, previous);
 	Assert(i != end(proxies));
-	*i = proxy;
-	which->data = proxy;
-	refreshChecker(*which);
-
-	applyItem(which->id);
+	*i = updated;
+	which->data = updated;
+	if (selected && !technicalChanged) {
+		_settings.setSelected(updated);
+	}
+	if (lastSelected) {
+		_lastSelectedProxy = updated;
+	}
+	if (technicalChanged) {
+		refreshChecker(*which);
+		applyItem(which->id);
+	} else {
+		updateView(*which);
+	}
 	saveDelayed();
 }
 
@@ -2017,9 +2101,7 @@ object_ptr<Ui::BoxContent> ProxiesBoxController::addNewItemBox() {
 			result,
 			[](const Item &item) { return item.data; });
 		if (j != end(_list)) {
-			if (j->deleted) {
-				restoreItem(j->id);
-			}
+			replaceItemValue(j, result);
 			applyItem(j->id);
 		} else {
 			addNewItem(result);
@@ -2146,6 +2228,7 @@ void ProxiesBoxController::updateView(const Item &item) {
 		item.id,
 		type,
 		item.data.host,
+		item.data.customName,
 		item.data.port,
 		item.ping,
 		!deleted && selected,

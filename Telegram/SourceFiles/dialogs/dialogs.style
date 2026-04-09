@@ -577,15 +577,72 @@ dialogsMiniReplyStory: DialogsMiniIcon {
 }
 
 dialogsUnreadMention: ThreeStateIcon {
+	icon: icon{{ "dialogs/dialogs_mention", dialogsUnreadBg }};
+	over: icon{{ "dialogs/dialogs_mention", dialogsUnreadBg }};
+	active: icon{{ "dialogs/dialogs_mention", dialogsNameFgActive }};
+}
+dialogsUnreadMentionMuted: ThreeStateIcon {
+	icon: icon{{ "dialogs/dialogs_mention", dialogsUnreadBgMuted }};
+	over: icon{{ "dialogs/dialogs_mention", dialogsUnreadBgMutedOver }};
+	active: icon{{ "dialogs/dialogs_mention", dialogsUnreadBgMutedActive }};
+}
+dialogsUnreadReaction: ThreeStateIcon {
+	icon: icon{{ "dialogs/dialogs_reaction", dialogsDraftFg }};
+	over: icon{{ "dialogs/dialogs_reaction", dialogsDraftFg }};
+	active: icon{{ "dialogs/dialogs_reaction", dialogsNameFgActive }};
+}
+dialogsUnreadReactionMuted: ThreeStateIcon {
+	icon: icon{{ "dialogs/dialogs_reaction", dialogsUnreadBgMuted }};
+	over: icon{{ "dialogs/dialogs_reaction", dialogsUnreadBgMutedOver }};
+	active: icon{{ "dialogs/dialogs_reaction", dialogsUnreadBgMutedActive }};
+}
+dialogsUnreadPoll: ThreeStateIcon {
+	icon: icon{{ "menu/create_poll", dialogsUnreadBg }};
+	over: icon{{ "menu/create_poll", dialogsUnreadBg }};
+	active: icon{{ "menu/create_poll", dialogsNameFgActive }};
+}
+dialogsUnreadPollMuted: ThreeStateIcon {
+	icon: icon{{ "menu/create_poll", dialogsUnreadBgMuted }};
+	over: icon{{ "menu/create_poll", dialogsUnreadBgMutedOver }};
+	active: icon{{ "menu/create_poll", dialogsUnreadBgMutedActive }};
+}
+dialogsUnreadMentionBadge: ThreeStateIcon {
 	icon: icon{{ "dialogs/dialogs_mention", dialogsUnreadFg }};
 	over: icon{{ "dialogs/dialogs_mention", dialogsUnreadFgOver }};
 	active: icon{{ "dialogs/dialogs_mention", dialogsUnreadFgActive }};
 }
-dialogsUnreadReaction: ThreeStateIcon {
+dialogsUnreadMentionBadgeMuted: ThreeStateIcon {
+	icon: icon{{ "dialogs/dialogs_mention", dialogsUnreadFg }};
+	over: icon{{ "dialogs/dialogs_mention", dialogsUnreadFgOver }};
+	active: icon{{ "dialogs/dialogs_mention", dialogsUnreadFgActive }};
+}
+dialogsUnreadReactionBadge: ThreeStateIcon {
 	icon: icon{{ "dialogs/dialogs_reaction", dialogsUnreadFg }};
 	over: icon{{ "dialogs/dialogs_reaction", dialogsUnreadFgOver }};
 	active: icon{{ "dialogs/dialogs_reaction", dialogsUnreadFgActive }};
 }
+dialogsUnreadReactionBadgeMuted: ThreeStateIcon {
+	icon: icon{{ "dialogs/dialogs_reaction", dialogsUnreadFg }};
+	over: icon{{ "dialogs/dialogs_reaction", dialogsUnreadFgOver }};
+	active: icon{{ "dialogs/dialogs_reaction", dialogsUnreadFgActive }};
+}
+dialogsUnreadPollBadge: ThreeStateIcon {
+	icon: icon{{ "menu/create_poll", dialogsUnreadFg }};
+	over: icon{{ "menu/create_poll", dialogsUnreadFgOver }};
+	active: icon{{ "menu/create_poll", dialogsUnreadFgActive }};
+}
+dialogsUnreadPollBadgeMuted: ThreeStateIcon {
+	icon: icon{{ "menu/create_poll", dialogsUnreadFg }};
+	over: icon{{ "menu/create_poll", dialogsUnreadFgOver }};
+	active: icon{{ "menu/create_poll", dialogsUnreadFgActive }};
+}
+
+dialogsMuteIcon: ThreeStateIcon {
+	icon: icon{{ "menu/mute", dialogsUnreadBgMuted }};
+	over: icon{{ "menu/mute", dialogsUnreadBgMutedOver }};
+	active: icon{{ "menu/mute", dialogsUnreadBgMutedActive }};
+}
+dialogsMuteIconSkip: 4px;
 
 downloadBarHeight: 46px;
 downloadArrow: icon{{ "fast_to_original", menuIconFg }};
