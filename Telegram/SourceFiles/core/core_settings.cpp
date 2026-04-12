@@ -259,7 +259,13 @@ QByteArray Settings::serialize() const {
 		+ sizeof(ushort)
 		+ sizeof(qint32) // _notificationsDisplayChecksum
 		+ Serialize::bytearraySize(callPanelPosition)
-		+ sizeof(qint32) * 5;
+		+ sizeof(qint32) * 4;
+	size += sizeof(quint32);
+	for (const auto &[key, value] : _prefs) {
+		size += Serialize::bytearraySize(key)
+			+ Serialize::bytearraySize(value);
+	}
+	size += sizeof(qint32) * 2;
 
 	auto result = QByteArray();
 	result.reserve(size);
@@ -355,7 +361,7 @@ QByteArray Settings::serialize() const {
 			<< qint32(_disableOpenGL ? 1 : 0)
 			<< _photoEditorBrush
 			<< qint32(_groupCallNoiseSuppression ? 1 : 0)
-			<< qint32(SerializePlaybackSpeed(_voicePlaybackSpeed))
+			<< qint32(SerializePlaybackSpeed(_voicePlaybackSpeed.current()))
 			<< qint32(_closeBehavior)
 			<< _customDeviceModel.current()
 			<< qint32(_playerRepeatMode.current())
@@ -428,8 +434,13 @@ QByteArray Settings::serialize() const {
 			<< qint32(_cornerReply.current() ? 1 : 0)
 			<< qint32(_systemAccentColorEnabled ? 1 : 0)
 			<< qint32(_usePlatformTranslation ? 1 : 0)
-			<< qint32(_systemTextReplace.current() ? 1 : 0)
-			<< qint32(qRound(_voiceVolume.current() * 1e6));
+			<< qint32(_systemTextReplace.current() ? 1 : 0);
+		stream << quint32(_prefs.size());
+		for (const auto &[key, value] : _prefs) {
+			stream << key << value;
+		}
+		stream << qint32(SerializePlaybackSpeed(_audioPlaybackSpeed.current()));
+		stream << qint32(qRound(_voiceVolume.current() * 1e6));
 	}
 
 	Ensures(result.size() == size);
@@ -491,7 +502,9 @@ void Settings::addFromSerialized(const QByteArray &serialized) {
 	qint32 suggestStickersByEmoji = _suggestStickersByEmoji ? 1 : 0;
 	qint32 spellcheckerEnabled = _spellcheckerEnabled.current() ? 1 : 0;
 	qint32 videoPlaybackSpeed = SerializePlaybackSpeed(_videoPlaybackSpeed);
-	qint32 voicePlaybackSpeed = SerializePlaybackSpeed(_voicePlaybackSpeed);
+	qint32 voicePlaybackSpeed = SerializePlaybackSpeed(
+		_voicePlaybackSpeed.current());
+	auto audioPlaybackSpeed = std::optional<qint32>();
 	QByteArray videoPipGeometry = _videoPipGeometry;
 	qint32 dictionariesEnabledCount = 0;
 	std::vector<int> dictionariesEnabled;
@@ -922,7 +935,33 @@ void Settings::addFromSerialized(const QByteArray &serialized) {
 		stream >> systemTextReplace;
 	}
 	if (!stream.atEnd()) {
-		stream >> voiceVolume;
+		if (stream.device()->bytesAvailable() == sizeof(qint32)) {
+			stream >> voiceVolume;
+		} else {
+			auto prefsCount = quint32();
+			stream >> prefsCount;
+			auto prefs = base::flat_map<QByteArray, QByteArray>();
+			prefs.reserve(prefsCount);
+			for (auto i = quint32(); i != prefsCount; ++i) {
+				auto key = QByteArray();
+				auto value = QByteArray();
+				stream >> key >> value;
+				prefs.emplace(std::move(key), std::move(value));
+			}
+			if (stream.status() == QDataStream::Ok) {
+				_prefs = std::move(prefs);
+			}
+			if (!stream.atEnd()) {
+				auto speed = qint32();
+				stream >> speed;
+				if (stream.status() == QDataStream::Ok) {
+					audioPlaybackSpeed = speed;
+				}
+			}
+			if (!stream.atEnd()) {
+				stream >> voiceVolume;
+			}
+		}
 	}
 	if (stream.status() != QDataStream::Ok) {
 		LOG(("App Error: "
@@ -1008,9 +1047,15 @@ void Settings::addFromSerialized(const QByteArray &serialized) {
 	_suggestStickersByEmoji = (suggestStickersByEmoji == 1);
 	_spellcheckerEnabled = (spellcheckerEnabled == 1);
 	_videoPlaybackSpeed = DeserializePlaybackSpeed(videoPlaybackSpeed);
-	_voicePlaybackSpeed = DeserializePlaybackSpeed(voicePlaybackSpeed);
-	if (nonDefaultVoicePlaybackSpeed != 1) {
-		_voicePlaybackSpeed.enabled = false;
+	{
+		auto speed = DeserializePlaybackSpeed(voicePlaybackSpeed);
+		if (nonDefaultVoicePlaybackSpeed != 1) {
+			speed.enabled = false;
+		}
+		_voicePlaybackSpeed = speed;
+		_audioPlaybackSpeed = audioPlaybackSpeed
+			? DeserializePlaybackSpeed(*audioPlaybackSpeed)
+			: speed;
 	}
 	_videoPipGeometry = (videoPipGeometry);
 	_dictionariesEnabled = std::move(dictionariesEnabled);
@@ -1159,6 +1204,48 @@ void Settings::addFromSerialized(const QByteArray &serialized) {
 	_chatFiltersHorizontal = (chatFiltersHorizontal == 1);
 	_quickDialogAction = Dialogs::Ui::QuickDialogAction(quickDialogAction);
 	_notificationsVolume = notificationsVolume;
+}
+
+void Settings::clearPref(std::string_view key) {
+	const auto i = _prefs.find(QByteArray(key.data(), key.size()));
+	if (i == end(_prefs)) {
+		return;
+	}
+	_prefs.erase(i);
+	_saveDelayed.fire({});
+}
+
+void Settings::writePrefGeneric(
+		std::string_view key,
+		const QByteArray &value) {
+	const auto raw = QByteArray(key.data(), key.size());
+	if (const auto i = _prefs.find(raw); i != end(_prefs)) {
+		if (i->second == value) {
+			return;
+		}
+		i->second = value;
+	} else {
+		_prefs.emplace(raw, value);
+	}
+	_saveDelayed.fire({});
+}
+
+std::optional<QByteArray> Settings::readPrefGeneric(std::string_view key) {
+	const auto i = _prefs.find(QByteArray(key.data(), key.size()));
+	return (i != end(_prefs)) ? i->second : std::optional<QByteArray>();
+}
+
+template <>
+std::optional<bool> Settings::readPrefImpl<bool>(std::string_view key) {
+	if (const auto data = readPrefGeneric(key)) {
+		return !data->isEmpty();
+	}
+	return {};
+}
+
+template <>
+void Settings::writePrefImpl<bool>(std::string_view key, bool value) {
+	writePrefGeneric(key, value ? "\x1"_q : QByteArray());
 }
 
 QString Settings::getSoundPath(const QString &key) const {
@@ -1533,6 +1620,7 @@ void Settings::resetOnLastLogout() {
 	_spellcheckerEnabled = true;
 	_videoPlaybackSpeed = PlaybackSpeed();
 	_voicePlaybackSpeed = PlaybackSpeed();
+	_audioPlaybackSpeed = PlaybackSpeed();
 	//_videoPipGeometry = QByteArray();
 	_dictionariesEnabled = std::vector<int>();
 	_autoDownloadDictionaries = true;
@@ -1550,6 +1638,11 @@ void Settings::resetOnLastLogout() {
 	_hiddenGroupCallTooltips = 0;
 	_storiesClickTooltipHidden = false;
 	_ttlVoiceClickTooltipHidden = false;
+	const auto srDisabled = readPref<bool>(kScreenReaderModeDisabledKey);
+	_prefs.clear();
+	if (srDisabled) {
+		writePref<bool>(kScreenReaderModeDisabledKey, true);
+	}
 	_ivZoom = 0;
 	_recordVideoMessages = false;
 	_videoQuality = {};
