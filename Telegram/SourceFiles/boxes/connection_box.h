@@ -127,10 +127,6 @@ private:
 		Item &item,
 		const ProxyData &proxy,
 		VlessPingProbe *probe = nullptr);
-	void setupChecker(
-		int id,
-		const Checker &checker,
-		VlessPingProbe *probe = nullptr);
 
 	void replaceItemWith(
 		std::vector<Item>::iterator which,

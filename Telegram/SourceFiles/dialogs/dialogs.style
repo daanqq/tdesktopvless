@@ -76,10 +76,6 @@ infoForumTopicIcon: ForumTopicIcon {
 dialogsUnreadFont: font(12px bold);
 dialogsUnreadHeight: 19px;
 dialogsUnreadPadding: 5px;
-dialogsMentionIconFg: dialogsUnreadBg;
-dialogsReactionIconFg: dialogsDraftFg;
-dialogsPollIconFg: dialogsUnreadBg;
-
 dialogsRipple: RippleAnimation(defaultRippleAnimation) {
 	color: dialogsRippleBg;
 }
@@ -542,10 +538,6 @@ dialogsScamPadding: margins(2px, 0px, 2px, 0px);
 dialogsScamFont: font(9px semibold);
 dialogsScamSkip: 4px;
 dialogsScamRadius: 2px;
-
-dialogsUnreadMediaSize: 5px;
-dialogsUnreadMediaSkip: 4px;
-dialogsUnreadMediaTop: 7px;
 
 dialogsMiniPreviewTop: 1px;
 dialogsMiniPreview: 16px;

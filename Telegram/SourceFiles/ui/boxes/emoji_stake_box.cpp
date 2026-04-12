@@ -387,6 +387,7 @@ void AddStakePresets(
 				wrap,
 				rpl::single(FormatTonAmount(nanoTon).full + diamond),
 				st::stakePresetButton);
+			button->setTextTransform(Ui::RoundButtonTextTransform::ToUpper);
 			button->setClickedCallback([=] {
 				callback(nanoTon);
 			});

@@ -52,6 +52,8 @@ EditInformation::EditInformation(
 		this,
 		tr::lng_cancel(),
 		st::paymentsPanelButton) {
+	_submit->setTextTransform(::Ui::RoundButtonTextTransform::ToUpper);
+	_cancel->setTextTransform(::Ui::RoundButtonTextTransform::ToUpper);
 	setupControls();
 }
 

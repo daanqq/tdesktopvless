@@ -24,7 +24,7 @@ constexpr auto AppName = "Unofficial Telegram Desktop VLESS"_cs;
 constexpr auto AppDescription
 	= "Unofficial Telegram Desktop fork with VLESS support."_cs;
 constexpr auto AppFile = "TelegramDesktopVless"_cs;
-constexpr auto AppVersion = 6007002;
-constexpr auto AppVersionStr = "6.7.2";
+constexpr auto AppVersion = 6007005;
+constexpr auto AppVersionStr = "6.7.5";
 constexpr auto AppBetaVersion = true;
 constexpr auto AppAlphaVersion = TDESKTOP_ALPHA_VERSION;
